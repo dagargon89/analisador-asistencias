@@ -1,0 +1,14 @@
+/* Reset mínimo — los estilos de la plataforma viven en el <style> inline de App.tsx */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+#root {
+  min-height: 100vh;
+}
