@@ -797,7 +797,6 @@ export default function AttendancePlatform() {
             { id: "daily", icon: <Icons.Calendar />, label: "Reporte Diario" },
             { id: "employees", icon: <Icons.Users />, label: "Por Empleado" },
             { id: "incidents", icon: <Icons.Alert />, label: "Incidencias" },
-            { id: "database", icon: <Icons.Database />, label: "Base de Datos" },
           ].map(item => (
             <button
               key={item.id}
