@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
+import { GoogleGenAI } from "@google/genai";
 
 // --- Types ---
 type EntryStatus = "ontime" | "late" | "verylate";
@@ -250,6 +251,271 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// --- Chat Types ---
+type ChatRole = "user" | "model";
+type ChatMessage = { role: ChatRole; text: string };
+
+// --- Attendance JSON Type ---
+type AttendanceDataJson = {
+  generado: string;
+  archivo: string;
+  configuracion: {
+    horaEntrada: string;
+    horaSalida: string;
+    toleranciaMinutos: number;
+    umbralRetardoMayor: number;
+    jornadaHoras: number;
+  };
+  resumen: {
+    totalRegistros: number;
+    totalEmpleados: number;
+    periodoDesde: string;
+    periodoHasta: string;
+    meses: string[];
+    aTiempoTotal: number;
+    retardosTotal: number;
+    retardosMayoresTotal: number;
+    horasTotales: number;
+    horasPromedioRegistro: number;
+  };
+  porEmpleado: {
+    nombre: string;
+    dias: number;
+    aTiempo: number;
+    retardos: number;
+    retardosMayores: number;
+    horasTotal: number;
+    horasPromedio: number;
+    puntualidadPct: number;
+  }[];
+  registros: {
+    empleado: string;
+    fecha: string;
+    entrada: string;
+    salida: string;
+    horas: number;
+    estado: "aTiempo" | "retardo" | "retardoMayor";
+  }[];
+};
+
+// --- Attendance JSON Builder ---
+function buildAttendanceJson(
+  records: AttendanceRecord[],
+  config: Config,
+  fileName: string
+): AttendanceDataJson {
+  const classifyMins = (entry: string): "aTiempo" | "retardo" | "retardoMayor" => {
+    const mins = entry.split(":").map(Number).reduce((h, m) => h * 60 + m, 0);
+    const scheduled = config.entryTime.split(":").map(Number).reduce((h, m) => h * 60 + m, 0);
+    const diff = mins - scheduled;
+    if (diff <= config.toleranceMinutes) return "aTiempo";
+    if (diff <= config.lateThresholdMinutes) return "retardo";
+    return "retardoMayor";
+  };
+
+  const empMap: Record<string, AttendanceDataJson["porEmpleado"][0]> = {};
+  const classifiedRecords: AttendanceDataJson["registros"] = [];
+
+  for (const r of records) {
+    const estado = classifyMins(r.entry);
+    classifiedRecords.push({
+      empleado: r.employee,
+      fecha: r.date,
+      entrada: r.entry,
+      salida: r.exit || "",
+      horas: r.hoursWorked,
+      estado,
+    });
+    if (!empMap[r.employee]) {
+      empMap[r.employee] = { nombre: r.employee, dias: 0, aTiempo: 0, retardos: 0, retardosMayores: 0, horasTotal: 0, horasPromedio: 0, puntualidadPct: 0 };
+    }
+    empMap[r.employee].dias++;
+    empMap[r.employee].horasTotal = Number((empMap[r.employee].horasTotal + r.hoursWorked).toFixed(2));
+    if (estado === "aTiempo") empMap[r.employee].aTiempo++;
+    else if (estado === "retardo") empMap[r.employee].retardos++;
+    else empMap[r.employee].retardosMayores++;
+  }
+
+  const porEmpleado = Object.values(empMap).map((e) => ({
+    ...e,
+    horasTotal: Number(e.horasTotal.toFixed(1)),
+    horasPromedio: Number((e.horasTotal / Math.max(e.dias, 1)).toFixed(2)),
+    puntualidadPct: Math.round((e.aTiempo / Math.max(e.dias, 1)) * 100),
+  })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const dates = [...new Set(records.map((r) => r.date))].sort();
+  const meses = [...new Set(records.map((r) => r.date.slice(0, 7)))].sort();
+  const totalHoras = Number(porEmpleado.reduce((s, e) => s + e.horasTotal, 0).toFixed(1));
+
+  return {
+    generado: new Date().toISOString().slice(0, 10),
+    archivo: fileName,
+    configuracion: {
+      horaEntrada: config.entryTime,
+      horaSalida: config.exitTime,
+      toleranciaMinutos: config.toleranceMinutes,
+      umbralRetardoMayor: config.lateThresholdMinutes,
+      jornadaHoras: config.workingHoursPerDay,
+    },
+    resumen: {
+      totalRegistros: records.length,
+      totalEmpleados: porEmpleado.length,
+      periodoDesde: dates[0] ?? "",
+      periodoHasta: dates[dates.length - 1] ?? "",
+      meses,
+      aTiempoTotal: porEmpleado.reduce((s, e) => s + e.aTiempo, 0),
+      retardosTotal: porEmpleado.reduce((s, e) => s + e.retardos, 0),
+      retardosMayoresTotal: porEmpleado.reduce((s, e) => s + e.retardosMayores, 0),
+      horasTotales: totalHoras,
+      horasPromedioRegistro: Number((totalHoras / Math.max(records.length, 1)).toFixed(2)),
+    },
+    porEmpleado,
+    registros: classifiedRecords,
+  };
+}
+
+// --- Gemini System Prompt Builder ---
+function buildSystemPrompt(dataJson: AttendanceDataJson | null): string {
+  if (!dataJson) {
+    return "Eres un asistente de análisis de asistencia laboral. Aún no hay datos cargados en la aplicación. Indica al usuario que debe subir un archivo .xlsx primero.";
+  }
+  return `Eres un asistente experto en análisis de asistencia laboral. Responde siempre en español, de forma clara y concisa. Basa todas tus respuestas ÚNICAMENTE en los datos del siguiente JSON, sin inventar información.
+
+Si la pregunta no está relacionada con asistencia o estos datos, indica amablemente que solo puedes ayudar con análisis de asistencia.
+
+<datos_asistencia>
+${JSON.stringify(dataJson, null, 2)}
+</datos_asistencia>
+
+El JSON contiene:
+- "configuracion": horarios y tolerancias configurados
+- "resumen": estadísticas globales del período
+- "porEmpleado": métricas individuales de cada empleado
+- "registros": cada registro individual con empleado, fecha, entrada, salida, horas y estado (aTiempo/retardo/retardoMayor)`;
+}
+
+// --- Markdown renderer (inline, no dependencies) ---
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split("\n");
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // H3
+    if (line.startsWith("### ")) {
+      elements.push(
+        <div key={i} style={{ fontWeight: 700, fontSize: 13, color: "#e2e8f0", marginTop: 10, marginBottom: 2 }}>
+          {inlineMarkdown(line.slice(4))}
+        </div>
+      );
+      i++;
+      continue;
+    }
+    // H2
+    if (line.startsWith("## ")) {
+      elements.push(
+        <div key={i} style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginTop: 12, marginBottom: 4, borderBottom: "1px solid rgba(99,132,255,0.15)", paddingBottom: 4 }}>
+          {inlineMarkdown(line.slice(3))}
+        </div>
+      );
+      i++;
+      continue;
+    }
+    // H1
+    if (line.startsWith("# ")) {
+      elements.push(
+        <div key={i} style={{ fontWeight: 700, fontSize: 15, color: "#fff", marginTop: 12, marginBottom: 6 }}>
+          {inlineMarkdown(line.slice(2))}
+        </div>
+      );
+      i++;
+      continue;
+    }
+    // Bullet list (- or *)
+    if (/^[\-\*] /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[\-\*] /.test(lines[i])) {
+        items.push(lines[i].slice(2));
+        i++;
+      }
+      elements.push(
+        <ul key={`ul-${i}`} style={{ paddingLeft: 18, margin: "6px 0", display: "flex", flexDirection: "column", gap: 3 }}>
+          {items.map((item, j) => (
+            <li key={j} style={{ fontSize: 13, color: "#c5cde0", lineHeight: 1.5 }}>
+              {inlineMarkdown(item)}
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+    // Numbered list
+    if (/^\d+\. /.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\. /, ""));
+        i++;
+      }
+      elements.push(
+        <ol key={`ol-${i}`} style={{ paddingLeft: 20, margin: "6px 0", display: "flex", flexDirection: "column", gap: 3 }}>
+          {items.map((item, j) => (
+            <li key={j} style={{ fontSize: 13, color: "#c5cde0", lineHeight: 1.5 }}>
+              {inlineMarkdown(item)}
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      elements.push(<hr key={i} style={{ border: "none", borderTop: "1px solid rgba(99,132,255,0.12)", margin: "8px 0" }} />);
+      i++;
+      continue;
+    }
+    // Empty line → spacing
+    if (line.trim() === "") {
+      elements.push(<div key={i} style={{ height: 6 }} />);
+      i++;
+      continue;
+    }
+    // Normal paragraph
+    elements.push(
+      <div key={i} style={{ fontSize: 13, color: "#c5cde0", lineHeight: 1.65 }}>
+        {inlineMarkdown(line)}
+      </div>
+    );
+    i++;
+  }
+
+  return <>{elements}</>;
+}
+
+function inlineMarkdown(text: string): React.ReactNode {
+  // Split by bold (**), italic (*), and inline code (`)
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} style={{ color: "#e2e8f0", fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={i} style={{ color: "#b0b8cc", fontStyle: "italic" }}>{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={i} style={{
+          background: "rgba(99,132,255,0.12)", color: "#818cf8",
+          padding: "1px 6px", borderRadius: 4,
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+        }}>{part.slice(1, -1)}</code>
+      );
+    }
+    return part;
+  });
+}
+
 // --- Main App Component ---
 export default function AttendancePlatform() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -273,6 +539,19 @@ export default function AttendancePlatform() {
   });
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const [attendanceJson, setAttendanceJson] = useState<AttendanceDataJson | null>(null);
+
+  // --- Chat state ---
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState<string>(
+    () => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("gemini_key") || ""
+  );
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   // Derive employees and months dynamically from loaded records
   const employees = useMemo(
@@ -425,6 +704,52 @@ export default function AttendancePlatform() {
     }));
   }, [filteredData]);
 
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, isChatLoading]);
+
+  const saveApiKey = useCallback(() => {
+    const key = apiKeyInput.trim();
+    if (!key) return;
+    localStorage.setItem("gemini_key", key);
+    setApiKey(key);
+    setApiKeyInput("");
+  }, [apiKeyInput]);
+
+  const sendChatMessage = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || isChatLoading || !apiKey) return;
+
+    const userMsg: ChatMessage = { role: "user", text };
+    const updatedHistory = [...chatMessages, userMsg];
+    setChatMessages(updatedHistory);
+    setChatInput("");
+    setIsChatLoading(true);
+    setChatError(null);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const contents = updatedHistory.map((m) => ({
+        role: m.role,
+        parts: [{ text: m.text }],
+      }));
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents,
+        config: {
+          systemInstruction: buildSystemPrompt(attendanceJson),
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      });
+      const reply = response.text ?? "Sin respuesta.";
+      setChatMessages((prev) => [...prev, { role: "model", text: reply }]);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Error al contactar Gemini.");
+    } finally {
+      setIsChatLoading(false);
+    }
+  }, [chatInput, chatMessages, isChatLoading, apiKey, attendanceJson]);
+
   const handlePickFile = useCallback(() => {
     inputRef.current?.click();
   }, []);
@@ -552,15 +877,21 @@ export default function AttendancePlatform() {
       setUploadSummary(summary);
       if (parsed.length === 0) {
         setUploadError("Se procesó el archivo pero no se encontraron registros válidos.");
+        setAttendanceJson(null);
+      } else {
+        const json = buildAttendanceJson(parsed, config, file.name);
+        setAttendanceJson(json);
+        setChatMessages([]);
       }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Error inesperado al procesar el archivo.");
       setRecords([]);
+      setAttendanceJson(null);
     } finally {
       setIsUploading(false);
       e.target.value = "";
     }
-  }, []);
+  }, [config]);
 
   return (
     <div style={{
@@ -736,6 +1067,84 @@ export default function AttendancePlatform() {
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
+        }
+
+        .chat-fab {
+          position: fixed; bottom: 28px; right: 28px; z-index: 200;
+          width: 52px; height: 52px; border-radius: 50%;
+          background: linear-gradient(135deg, #6384ff, #5a6fff);
+          border: none; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 4px 20px rgba(99,132,255,0.4);
+          transition: all 0.2s;
+        }
+        .chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 28px rgba(99,132,255,0.55); }
+
+        .chat-panel {
+          position: fixed; bottom: 92px; right: 28px; z-index: 200;
+          width: 380px; height: 560px;
+          background: linear-gradient(145deg, #141b2d, #0f1423);
+          border: 1px solid rgba(99,132,255,0.15);
+          border-radius: 20px;
+          box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+          display: flex; flex-direction: column;
+          animation: slideUp 0.25s ease;
+          overflow: hidden;
+        }
+
+        .chat-msg-user {
+          align-self: flex-end;
+          background: linear-gradient(135deg, #6384ff, #5a6fff);
+          color: #fff;
+          padding: 10px 14px; border-radius: 16px 16px 4px 16px;
+          max-width: 80%; font-size: 13px; line-height: 1.5;
+          word-break: break-word;
+        }
+        .chat-msg-model {
+          align-self: flex-start;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(99,132,255,0.1);
+          color: #c5cde0;
+          padding: 10px 14px; border-radius: 16px 16px 16px 4px;
+          max-width: 88%; font-size: 13px; line-height: 1.6;
+          word-break: break-word;
+        }
+        .chat-input-row {
+          display: flex; gap: 8px; padding: 12px 16px;
+          border-top: 1px solid rgba(99,132,255,0.08);
+          background: rgba(10,14,23,0.6);
+        }
+        .chat-input {
+          flex: 1;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(99,132,255,0.15);
+          border-radius: 10px; padding: 9px 13px;
+          color: #e2e8f0; font-size: 13px; font-family: inherit;
+          outline: none; resize: none;
+          transition: border-color 0.2s;
+        }
+        .chat-input:focus { border-color: rgba(99,132,255,0.4); }
+        .chat-send-btn {
+          width: 38px; height: 38px; border-radius: 10px;
+          background: linear-gradient(135deg, #6384ff, #5a6fff);
+          border: none; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 0.2s; flex-shrink: 0;
+          align-self: flex-end;
+        }
+        .chat-send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,132,255,0.35); }
+        .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+        .typing-dot {
+          width: 6px; height: 6px; border-radius: 50%;
+          background: #6384ff; display: inline-block;
+          animation: typingBounce 1.2s infinite ease-in-out;
+        }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typingBounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+          40% { transform: translateY(-6px); opacity: 1; }
         }
       `}</style>
 
@@ -1402,6 +1811,234 @@ sin importar mayúsculas o tildes.`}</pre>
               Guardar Configuración
             </button>
           </div>
+        </div>
+      )}
+
+      {/* --- CHAT FAB --- */}
+      <button
+        className="chat-fab"
+        onClick={() => setShowChat((v) => !v)}
+        title="Asistente IA"
+      >
+        {showChat ? (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        ) : (
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        )}
+      </button>
+
+      {/* --- CHAT PANEL --- */}
+      {showChat && (
+        <div className="chat-panel">
+          {/* Header */}
+          <div style={{
+            padding: "16px 20px", borderBottom: "1px solid rgba(99,132,255,0.1)",
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: "linear-gradient(135deg, #6384ff, #5a6fff)",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Asistente IA</div>
+              <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ color: "#5a6580" }}>gemini-3-flash</span>
+                {attendanceJson ? (
+                  <span style={{ color: "#34d399" }}>· JSON listo ✓</span>
+                ) : (
+                  <span style={{ color: "#f59e0b" }}>· sin datos</span>
+                )}
+              </div>
+            </div>
+            {attendanceJson && (
+              <button
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify(attendanceJson, null, 2)], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `asistencias_${attendanceJson.generado}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                style={{
+                  background: "rgba(99,132,255,0.1)", border: "1px solid rgba(99,132,255,0.2)",
+                  borderRadius: 7, padding: "4px 8px", color: "#818cf8",
+                  cursor: "pointer", fontSize: 10, fontFamily: "inherit",
+                }}
+                title="Descargar JSON"
+              >
+                ↓ JSON
+              </button>
+            )}
+            {chatMessages.length > 0 && (
+              <button
+                onClick={() => { setChatMessages([]); setChatError(null); }}
+                style={{ background: "none", border: "none", color: "#5a6580", cursor: "pointer", padding: 4, fontSize: 11 }}
+                title="Limpiar chat"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+
+          {/* Sin API key */}
+          {!apiKey && (
+            <div style={{ padding: 20, flex: 1, display: "flex", flexDirection: "column", gap: 12, justifyContent: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>
+                Configura tu API Key de Gemini
+              </div>
+              <div style={{ fontSize: 12, color: "#5a6580", lineHeight: 1.6 }}>
+                Obtén una clave gratuita en{" "}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
+                  style={{ color: "#6384ff" }}>aistudio.google.com</a>.
+              </div>
+              <input
+                className="input-field"
+                type="password"
+                placeholder="AIza..."
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveApiKey()}
+              />
+              <button className="btn-primary" onClick={saveApiKey} style={{ justifyContent: "center" }}>
+                Guardar clave
+              </button>
+              <div style={{ fontSize: 10, color: "#3d4f6f", lineHeight: 1.5 }}>
+                La clave se guarda solo en tu navegador (localStorage). También puedes definir VITE_GEMINI_API_KEY en el archivo .env.
+              </div>
+            </div>
+          )}
+
+          {/* Con API key */}
+          {apiKey && (
+            <>
+              {/* Mensajes */}
+              <div style={{
+                flex: 1, overflowY: "auto", padding: "16px 16px 8px",
+                display: "flex", flexDirection: "column", gap: 10,
+              }}>
+                {/* Estado vacío */}
+                {chatMessages.length === 0 && (
+                  <div style={{ textAlign: "center", margin: "auto", padding: "0 16px" }}>
+                    <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>
+                      {records.length === 0
+                        ? "Carga datos primero"
+                        : "¿En qué puedo ayudarte?"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#5a6580", lineHeight: 1.6 }}>
+                      {records.length === 0
+                        ? "Sube un archivo .xlsx para poder analizar asistencias."
+                        : "Pregúntame sobre puntualidad, retardos, horas trabajadas o cualquier análisis de los datos cargados."}
+                    </div>
+                    {records.length > 0 && (
+                      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+                        {[
+                          "¿Quién tuvo más retardos?",
+                          "Dame un resumen ejecutivo",
+                          "¿Cuál es el promedio de horas trabajadas?",
+                        ].map((q) => (
+                          <button
+                            key={q}
+                            onClick={() => { setChatInput(q); }}
+                            style={{
+                              background: "rgba(99,132,255,0.08)",
+                              border: "1px solid rgba(99,132,255,0.15)",
+                              borderRadius: 8, padding: "7px 12px",
+                              color: "#818cf8", fontSize: 12, cursor: "pointer",
+                              textAlign: "left", fontFamily: "inherit",
+                              transition: "all 0.2s",
+                            }}
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Burbujas */}
+                {chatMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={msg.role === "user" ? "chat-msg-user" : "chat-msg-model"}
+                  >
+                    {msg.role === "user" ? msg.text : renderMarkdown(msg.text)}
+                  </div>
+                ))}
+
+                {/* Indicador de carga */}
+                {isChatLoading && (
+                  <div className="chat-msg-model" style={{ display: "flex", gap: 5, alignItems: "center", padding: "12px 14px" }}>
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </div>
+                )}
+
+                {/* Error */}
+                {chatError && (
+                  <div style={{
+                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                    borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#f87171",
+                  }}>
+                    {chatError}
+                  </div>
+                )}
+
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* Input */}
+              <div className="chat-input-row">
+                <textarea
+                  className="chat-input"
+                  rows={1}
+                  placeholder={records.length === 0 ? "Carga datos para comenzar..." : "Escribe tu pregunta..."}
+                  value={chatInput}
+                  disabled={records.length === 0 || isChatLoading}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendChatMessage();
+                    }
+                  }}
+                  style={{ height: 38, lineHeight: "1.4" }}
+                />
+                <button
+                  className="chat-send-btn"
+                  onClick={sendChatMessage}
+                  disabled={!chatInput.trim() || isChatLoading || records.length === 0}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
+
+              {/* Cambiar API key */}
+              <div style={{ padding: "6px 16px 10px", display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => { setApiKey(""); localStorage.removeItem("gemini_key"); }}
+                  style={{ background: "none", border: "none", color: "#3d4f6f", cursor: "pointer", fontSize: 10, fontFamily: "inherit" }}
+                >
+                  Cambiar API key
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
