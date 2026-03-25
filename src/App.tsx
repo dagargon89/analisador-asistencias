@@ -261,6 +261,8 @@ export default function AttendancePlatform() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [reportPeriod, setReportPeriod] = useState("month");
   const [selectedMonth, setSelectedMonth] = useState("");
+  const [selectedDay, setSelectedDay] = useState("");
+  const [selectedWeek, setSelectedWeek] = useState(0);
   const [selectedEmployee, setSelectedEmployee] = useState("all");
   const [config, setConfig] = useState<Config>({
     entryTime: "08:30",
@@ -295,6 +297,48 @@ export default function AttendancePlatform() {
     [records]
   );
 
+  const dayOptions = useMemo(() => {
+    if (!selectedMonth) return [];
+    const unique = [
+      ...new Set(records.filter((r) => r.date.startsWith(selectedMonth)).map((r) => r.date)),
+    ].sort();
+    return unique.map((value) => {
+      const d = new Date(value + "T00:00:00");
+      const label = d.toLocaleDateString("es-MX", { weekday: "short", day: "numeric", month: "short" });
+      return { value, label };
+    });
+  }, [records, selectedMonth]);
+
+  const weekOptions = useMemo(() => {
+    if (!selectedMonth) return [];
+    const [year, month] = selectedMonth.split("-").map(Number);
+    const firstDay = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0);
+    const dayOfWeek = firstDay.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const weekCursor = new Date(firstDay);
+    weekCursor.setDate(weekCursor.getDate() - daysToMonday);
+    const weeks: { label: string; startDate: string; endDate: string }[] = [];
+    while (weekCursor <= lastDay) {
+      const start = new Date(weekCursor);
+      const end = new Date(weekCursor);
+      end.setDate(end.getDate() + 6);
+      const startDate = toIsoDate(start);
+      const endDate = toIsoDate(end);
+      const startDay = start.getDate();
+      const endDay = end.getDate();
+      const startMonthStr = start.toLocaleDateString("es-MX", { month: "short" });
+      const endMonthStr = end.toLocaleDateString("es-MX", { month: "short" });
+      const label =
+        start.getMonth() === end.getMonth()
+          ? `${startDay}–${endDay} ${endMonthStr}`
+          : `${startDay} ${startMonthStr} – ${endDay} ${endMonthStr}`;
+      weeks.push({ label, startDate, endDate });
+      weekCursor.setDate(weekCursor.getDate() + 7);
+    }
+    return weeks;
+  }, [selectedMonth]);
+
   // Auto-select most recent month when months change
   useEffect(() => {
     if (monthOptions.length === 0) return;
@@ -302,6 +346,21 @@ export default function AttendancePlatform() {
       setSelectedMonth(monthOptions[monthOptions.length - 1].value);
     }
   }, [monthOptions, selectedMonth]);
+
+  // Auto-select first available day/week when month or period changes
+  useEffect(() => {
+    if (reportPeriod === "day" && dayOptions.length > 0) {
+      if (!dayOptions.some((d) => d.value === selectedDay)) {
+        setSelectedDay(dayOptions[dayOptions.length - 1].value);
+      }
+    }
+  }, [reportPeriod, dayOptions, selectedDay]);
+
+  useEffect(() => {
+    if (reportPeriod === "week" && weekOptions.length > 0) {
+      setSelectedWeek((prev) => (prev >= weekOptions.length ? 0 : prev));
+    }
+  }, [reportPeriod, weekOptions]);
 
   const filteredData = useMemo(() => {
     let data = records;
@@ -312,20 +371,15 @@ export default function AttendancePlatform() {
       if (!selectedMonth) return [];
       data = data.filter((r) => r.date.startsWith(selectedMonth));
     } else if (reportPeriod === "week") {
-      if (!latestDate) return [];
-      const today = new Date(latestDate + "T00:00:00");
-      const weekAgo = new Date(today);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      data = data.filter((r) => {
-        const d = new Date(r.date + "T00:00:00");
-        return d >= weekAgo && d <= today;
-      });
+      const week = weekOptions[selectedWeek];
+      if (!week) return [];
+      data = data.filter((r) => r.date >= week.startDate && r.date <= week.endDate);
     } else if (reportPeriod === "day") {
-      if (!latestDate) return [];
-      data = data.filter((r) => r.date === latestDate);
+      if (!selectedDay) return [];
+      data = data.filter((r) => r.date === selectedDay);
     }
     return data;
-  }, [records, selectedEmployee, reportPeriod, selectedMonth, latestDate]);
+  }, [records, selectedEmployee, reportPeriod, selectedMonth, selectedDay, selectedWeek, weekOptions]);
 
   const stats = useMemo(() => {
     let onTime = 0, late = 0, veryLate = 0;
@@ -375,13 +429,33 @@ export default function AttendancePlatform() {
     inputRef.current?.click();
   }, []);
 
+  const periodLabel = useMemo(() => {
+    if (reportPeriod === "month" && selectedMonth) {
+      return monthOptions.find((m) => m.value === selectedMonth)?.label ?? selectedMonth;
+    }
+    if (reportPeriod === "day" && selectedDay) {
+      return new Date(selectedDay + "T00:00:00").toLocaleDateString("es-MX", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    }
+    if (reportPeriod === "week" && weekOptions[selectedWeek]) {
+      return `Semana ${weekOptions[selectedWeek].label}`;
+    }
+    return "Periodo seleccionado";
+  }, [reportPeriod, selectedMonth, selectedDay, selectedWeek, weekOptions, monthOptions]);
+
   // --- Export utilities ---
   const buildPeriodLabel = useCallback(() => {
     if (reportPeriod === "month" && selectedMonth) return selectedMonth;
-    if (reportPeriod === "week") return "semana";
-    if (reportPeriod === "day" && latestDate) return latestDate;
+    if (reportPeriod === "week" && weekOptions[selectedWeek]) {
+      return `semana-${weekOptions[selectedWeek].startDate}`;
+    }
+    if (reportPeriod === "day" && selectedDay) return selectedDay;
     return "periodo";
-  }, [reportPeriod, selectedMonth, latestDate]);
+  }, [reportPeriod, selectedMonth, selectedDay, selectedWeek, weekOptions]);
 
   const exportDashboard = useCallback(() => {
     if (employeeReport.length === 0) return;
@@ -787,7 +861,8 @@ export default function AttendancePlatform() {
               ))}
             </div>
 
-            {reportPeriod === "month" && (
+            {/* Selector de mes compartido para los tres modos */}
+            {(reportPeriod === "month" || reportPeriod === "day" || reportPeriod === "week") && (
               <select
                 className="input-field"
                 value={selectedMonth}
@@ -798,6 +873,38 @@ export default function AttendancePlatform() {
                 {monthOptions.length === 0
                   ? <option value="">Sin meses</option>
                   : monthOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)
+                }
+              </select>
+            )}
+
+            {/* Selector de día específico */}
+            {reportPeriod === "day" && (
+              <select
+                className="input-field"
+                value={selectedDay}
+                onChange={e => setSelectedDay(e.target.value)}
+                style={{ width: 180 }}
+                disabled={dayOptions.length === 0}
+              >
+                {dayOptions.length === 0
+                  ? <option value="">Sin días</option>
+                  : dayOptions.map(d => <option key={d.value} value={d.value}>{d.label}</option>)
+                }
+              </select>
+            )}
+
+            {/* Selector de semana dentro del mes */}
+            {reportPeriod === "week" && (
+              <select
+                className="input-field"
+                value={selectedWeek}
+                onChange={e => setSelectedWeek(Number(e.target.value))}
+                style={{ width: 210 }}
+                disabled={weekOptions.length === 0}
+              >
+                {weekOptions.length === 0
+                  ? <option value={0}>Sin semanas</option>
+                  : weekOptions.map((w, i) => <option key={w.startDate} value={i}>{w.label}</option>)
                 }
               </select>
             )}
@@ -821,6 +928,19 @@ export default function AttendancePlatform() {
           {/* DASHBOARD VIEW */}
           {activeTab === "dashboard" && (
             <>
+              {/* Period indicator */}
+              {records.length > 0 && (
+                <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    background: "rgba(99,132,255,0.10)", border: "1px solid rgba(99,132,255,0.18)",
+                    borderRadius: 8, padding: "4px 12px",
+                  }}>
+                    <Icons.Calendar />
+                    <span style={{ fontSize: 12, color: "#818cf8", fontWeight: 600 }}>{periodLabel}</span>
+                  </div>
+                </div>
+              )}
               {/* Stats Cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
                 <div className="glass-panel stat-card green" style={{ padding: 20 }}>
@@ -981,7 +1101,7 @@ export default function AttendancePlatform() {
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Reporte Detallado de Asistencia</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
-                    {filteredData.length} registros encontrados
+                    {filteredData.length} registros · {periodLabel}
                   </div>
                 </div>
                 <button className="btn-primary" onClick={exportDaily} disabled={filteredData.length === 0}><Icons.Download /> Exportar a Excel</button>
@@ -1033,7 +1153,7 @@ export default function AttendancePlatform() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Por Empleado</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>{employeeReport.length} empleados en el periodo</div>
+                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>{employeeReport.length} empleados · {periodLabel}</div>
                 </div>
                 <button className="btn-ghost" onClick={exportEmployees} disabled={employeeReport.length === 0}><Icons.Download /> Exportar</button>
               </div>
