@@ -918,10 +918,6 @@ export default function AttendancePlatform() {
               {employees.map(e => <option key={e} value={e}>{e}</option>)}
             </select>
 
-            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-              <button className="btn-ghost"><Icons.Download /> Excel</button>
-              <button className="btn-ghost"><Icons.Filter /> Filtros</button>
-            </div>
           </div>
 
           {/* DASHBOARD VIEW */}
