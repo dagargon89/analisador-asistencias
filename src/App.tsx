@@ -229,12 +229,30 @@ const Icons = {
       <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
     </svg>
   ),
+  UserX: () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/>
+      <line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/>
+    </svg>
+  ),
 };
 
 // --- Utility Functions ---
 function timeToMinutes(timeStr: string): number {
   const [h, m] = timeStr.split(":").map(Number);
   return h * 60 + m;
+}
+
+function getWorkingDays(startDate: string, endDate: string): string[] {
+  const days: string[] = [];
+  const current = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  while (current <= end) {
+    const dow = current.getDay();
+    if (dow >= 1 && dow <= 5) days.push(toIsoDate(current));
+    current.setDate(current.getDate() + 1);
+  }
+  return days;
 }
 
 function classifyEntry(entryTime: string, config: Config): EntryStatus {
@@ -277,6 +295,7 @@ type AttendanceDataJson = {
     retardosMayoresTotal: number;
     horasTotales: number;
     horasPromedioRegistro: number;
+    inasistenciasTotal: number;
   };
   porEmpleado: {
     nombre: string;
@@ -287,6 +306,7 @@ type AttendanceDataJson = {
     horasTotal: number;
     horasPromedio: number;
     puntualidadPct: number;
+    inasistencias: number;
   }[];
   registros: {
     empleado: string;
@@ -295,6 +315,10 @@ type AttendanceDataJson = {
     salida: string;
     horas: number;
     estado: "aTiempo" | "retardo" | "retardoMayor";
+  }[];
+  inasistencias: {
+    empleado: string;
+    fecha: string;
   }[];
 };
 
@@ -327,7 +351,7 @@ function buildAttendanceJson(
       estado,
     });
     if (!empMap[r.employee]) {
-      empMap[r.employee] = { nombre: r.employee, dias: 0, aTiempo: 0, retardos: 0, retardosMayores: 0, horasTotal: 0, horasPromedio: 0, puntualidadPct: 0 };
+      empMap[r.employee] = { nombre: r.employee, dias: 0, aTiempo: 0, retardos: 0, retardosMayores: 0, horasTotal: 0, horasPromedio: 0, puntualidadPct: 0, inasistencias: 0 };
     }
     empMap[r.employee].dias++;
     empMap[r.employee].horasTotal = Number((empMap[r.employee].horasTotal + r.hoursWorked).toFixed(2));
@@ -336,15 +360,35 @@ function buildAttendanceJson(
     else empMap[r.employee].retardosMayores++;
   }
 
+  const dates = [...new Set(records.map((r) => r.date))].sort();
+  const meses = [...new Set(records.map((r) => r.date.slice(0, 7)))].sort();
+
+  // Calculate absences for the full date range in the records
+  const allEmployees = Object.keys(empMap);
+  const presentSet = new Set(records.map((r) => `${r.employee}|${r.date}`));
+  const inasistencias: AttendanceDataJson["inasistencias"] = [];
+  const absenceByEmp: Record<string, number> = {};
+
+  if (dates.length > 0) {
+    const workingDays = getWorkingDays(dates[0], dates[dates.length - 1]);
+    for (const emp of allEmployees) {
+      for (const day of workingDays) {
+        if (!presentSet.has(`${emp}|${day}`)) {
+          inasistencias.push({ empleado: emp, fecha: day });
+          absenceByEmp[emp] = (absenceByEmp[emp] || 0) + 1;
+        }
+      }
+    }
+  }
+
   const porEmpleado = Object.values(empMap).map((e) => ({
     ...e,
     horasTotal: Number(e.horasTotal.toFixed(1)),
     horasPromedio: Number((e.horasTotal / Math.max(e.dias, 1)).toFixed(2)),
     puntualidadPct: Math.round((e.aTiempo / Math.max(e.dias, 1)) * 100),
+    inasistencias: absenceByEmp[e.nombre] ?? 0,
   })).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
-  const dates = [...new Set(records.map((r) => r.date))].sort();
-  const meses = [...new Set(records.map((r) => r.date.slice(0, 7)))].sort();
   const totalHoras = Number(porEmpleado.reduce((s, e) => s + e.horasTotal, 0).toFixed(1));
 
   return {
@@ -368,9 +412,11 @@ function buildAttendanceJson(
       retardosMayoresTotal: porEmpleado.reduce((s, e) => s + e.retardosMayores, 0),
       horasTotales: totalHoras,
       horasPromedioRegistro: Number((totalHoras / Math.max(records.length, 1)).toFixed(2)),
+      inasistenciasTotal: inasistencias.length,
     },
     porEmpleado,
     registros: classifiedRecords,
+    inasistencias: inasistencias.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.empleado.localeCompare(b.empleado)),
   };
 }
 
@@ -389,9 +435,10 @@ ${JSON.stringify(dataJson, null, 2)}
 
 El JSON contiene:
 - "configuracion": horarios y tolerancias configurados
-- "resumen": estadísticas globales del período
-- "porEmpleado": métricas individuales de cada empleado
-- "registros": cada registro individual con empleado, fecha, entrada, salida, horas y estado (aTiempo/retardo/retardoMayor)`;
+- "resumen": estadísticas globales del período (incluye inasistenciasTotal)
+- "porEmpleado": métricas individuales de cada empleado (incluye campo "inasistencias" por empleado)
+- "registros": cada registro individual con empleado, fecha, entrada, salida, horas y estado (aTiempo/retardo/retardoMayor)
+- "inasistencias": lista de días hábiles (Lun-Vie) sin registro por empleado, es decir, las ausencias detectadas`;
 }
 
 // --- Markdown renderer (inline, no dependencies) ---
@@ -660,6 +707,38 @@ export default function AttendancePlatform() {
     return data;
   }, [records, selectedEmployee, reportPeriod, selectedMonth, selectedDay, selectedWeek, weekOptions]);
 
+  const periodDateRange = useMemo((): { start: string; end: string } | null => {
+    if (reportPeriod === "month" && selectedMonth) {
+      const [year, month] = selectedMonth.split("-").map(Number);
+      const firstDay = new Date(year, month - 1, 1);
+      const lastDay = new Date(year, month, 0);
+      return { start: toIsoDate(firstDay), end: toIsoDate(lastDay) };
+    }
+    if (reportPeriod === "week" && weekOptions[selectedWeek]) {
+      return { start: weekOptions[selectedWeek].startDate, end: weekOptions[selectedWeek].endDate };
+    }
+    if (reportPeriod === "day" && selectedDay) {
+      return { start: selectedDay, end: selectedDay };
+    }
+    return null;
+  }, [reportPeriod, selectedMonth, selectedWeek, weekOptions, selectedDay]);
+
+  const absenceData = useMemo(() => {
+    if (!periodDateRange || records.length === 0) return [];
+    const workingDays = getWorkingDays(periodDateRange.start, periodDateRange.end);
+    const empList = selectedEmployee === "all" ? employees : [selectedEmployee];
+    const presentSet = new Set(records.map((r) => `${r.employee}|${r.date}`));
+    const absences: { employee: string; date: string }[] = [];
+    for (const emp of empList) {
+      for (const day of workingDays) {
+        if (!presentSet.has(`${emp}|${day}`)) {
+          absences.push({ employee: emp, date: day });
+        }
+      }
+    }
+    return absences.sort((a, b) => a.date.localeCompare(b.date) || a.employee.localeCompare(b.employee));
+  }, [records, periodDateRange, selectedEmployee, employees]);
+
   const stats = useMemo(() => {
     let onTime = 0, late = 0, veryLate = 0;
     filteredData.forEach((r) => {
@@ -670,14 +749,14 @@ export default function AttendancePlatform() {
     });
     const totalHours = filteredData.reduce((sum, r) => sum + r.hoursWorked, 0);
     const avgHours = filteredData.length > 0 ? totalHours / filteredData.length : 0;
-    return { onTime, late, veryLate, total: filteredData.length, totalHours, avgHours };
-  }, [filteredData, config]);
+    return { onTime, late, veryLate, total: filteredData.length, totalHours, avgHours, absences: absenceData.length };
+  }, [filteredData, config, absenceData]);
 
   const employeeReport = useMemo(() => {
-    const map: Record<string, { name: string; onTime: number; late: number; veryLate: number; totalHours: number; days: number }> = {};
+    const map: Record<string, { name: string; onTime: number; late: number; veryLate: number; totalHours: number; days: number; absences: number }> = {};
     filteredData.forEach((r) => {
       if (!map[r.employee]) {
-        map[r.employee] = { name: r.employee, onTime: 0, late: 0, veryLate: 0, totalHours: 0, days: 0 };
+        map[r.employee] = { name: r.employee, onTime: 0, late: 0, veryLate: 0, totalHours: 0, days: 0, absences: 0 };
       }
       const status = classifyEntry(r.entry, config);
       if (status === "ontime") map[r.employee].onTime++;
@@ -686,8 +765,20 @@ export default function AttendancePlatform() {
       map[r.employee].totalHours += r.hoursWorked;
       map[r.employee].days++;
     });
+    const absenceByEmp: Record<string, number> = {};
+    absenceData.forEach((a) => {
+      absenceByEmp[a.employee] = (absenceByEmp[a.employee] || 0) + 1;
+    });
+    // Include employees that may only have absences (no attendance in period)
+    const empList = selectedEmployee === "all" ? employees : [selectedEmployee];
+    for (const emp of empList) {
+      if (!map[emp] && absenceByEmp[emp]) {
+        map[emp] = { name: emp, onTime: 0, late: 0, veryLate: 0, totalHours: 0, days: 0, absences: 0 };
+      }
+      if (map[emp]) map[emp].absences = absenceByEmp[emp] ?? 0;
+    }
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filteredData, config]);
+  }, [filteredData, config, absenceData, employees, selectedEmployee]);
 
   const weekdayDistribution = useMemo(() => {
     const labels = ["Lun", "Mar", "Mié", "Jue", "Vie"];
@@ -840,6 +931,24 @@ export default function AttendancePlatform() {
     XLSX.writeFile(wb, `empleados_${buildPeriodLabel()}.xlsx`);
   }, [employeeReport, buildPeriodLabel]);
 
+  const exportAbsences = useCallback(() => {
+    if (absenceData.length === 0) return;
+    const rows = absenceData.map((a) => {
+      const d = new Date(a.date + "T00:00:00");
+      const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+      return {
+        Empleado: a.employee,
+        Fecha: a.date,
+        "Día de la Semana": dayNames[d.getDay()],
+        Tipo: "Inasistencia",
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inasistencias");
+    XLSX.writeFile(wb, `inasistencias_${buildPeriodLabel()}.xlsx`);
+  }, [absenceData, buildPeriodLabel]);
+
   const exportIncidents = useCallback(() => {
     const incidents = filteredData
       .filter((r) => classifyEntry(r.entry, config) !== "ontime")
@@ -936,6 +1045,7 @@ export default function AttendancePlatform() {
         .stat-card.amber::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
         .stat-card.red::before { background: linear-gradient(90deg, #ef4444, #f87171); }
         .stat-card.blue::before { background: linear-gradient(90deg, #6384ff, #818cf8); }
+        .stat-card.purple::before { background: linear-gradient(90deg, #a855f7, #c084fc); }
 
         .nav-btn {
           display: flex; align-items: center; gap: 8px;
@@ -962,6 +1072,7 @@ export default function AttendancePlatform() {
         .badge-green { background: rgba(16,185,129,0.12); color: #34d399; }
         .badge-amber { background: rgba(245,158,11,0.12); color: #fbbf24; }
         .badge-red { background: rgba(239,68,68,0.12); color: #f87171; }
+        .badge-purple { background: rgba(168,85,247,0.12); color: #c084fc; }
 
         .input-field {
           background: rgba(10,14,23,0.6);
@@ -1206,6 +1317,7 @@ export default function AttendancePlatform() {
             { id: "daily", icon: <Icons.Calendar />, label: "Reporte Diario" },
             { id: "employees", icon: <Icons.Users />, label: "Por Empleado" },
             { id: "incidents", icon: <Icons.Alert />, label: "Incidencias" },
+            { id: "absences", icon: <Icons.UserX />, label: "Inasistencias" },
           ].map(item => (
             <button
               key={item.id}
@@ -1375,6 +1487,13 @@ export default function AttendancePlatform() {
                     hrs/día por persona
                   </div>
                 </div>
+                <div className="glass-panel stat-card purple" style={{ padding: 20 }}>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Inasistencias</div>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{stats.absences}</div>
+                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                    días hábiles sin registro
+                  </div>
+                </div>
               </div>
 
               {/* Charts Row */}
@@ -1460,6 +1579,7 @@ export default function AttendancePlatform() {
                         <th>A Tiempo</th>
                         <th>Retardos</th>
                         <th>Ret. Mayor</th>
+                        <th>Inasistencias</th>
                         <th>Hrs. Total</th>
                         <th>Hrs. Prom.</th>
                         <th>Puntualidad</th>
@@ -1475,6 +1595,7 @@ export default function AttendancePlatform() {
                             <td><span className="badge badge-green">{emp.onTime}</span></td>
                             <td><span className="badge badge-amber">{emp.late}</span></td>
                             <td><span className="badge badge-red">{emp.veryLate}</span></td>
+                            <td><span className={`badge ${emp.absences > 0 ? "badge-purple" : "badge-green"}`}>{emp.absences}</span></td>
                             <td>{emp.totalHours.toFixed(1)}</td>
                             <td>{(emp.totalHours / Math.max(emp.days, 1)).toFixed(1)}</td>
                             <td>
@@ -1576,7 +1697,7 @@ export default function AttendancePlatform() {
                         color: pct >= 80 ? "#34d399" : pct >= 60 ? "#fbbf24" : "#f87171",
                       }}>{pct}%</div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
                       <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(16,185,129,0.06)" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono', monospace" }}>{emp.onTime}</div>
                         <div style={{ fontSize: 10, color: "#5a6580" }}>A Tiempo</div>
@@ -1588,6 +1709,10 @@ export default function AttendancePlatform() {
                       <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(239,68,68,0.06)" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, color: "#f87171", fontFamily: "'JetBrains Mono', monospace" }}>{emp.veryLate}</div>
                         <div style={{ fontSize: 10, color: "#5a6580" }}>Ret. Mayor</div>
+                      </div>
+                      <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(168,85,247,0.06)" }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{emp.absences}</div>
+                        <div style={{ fontSize: 10, color: "#5a6580" }}>Faltas</div>
                       </div>
                     </div>
                     <div style={{ height: 4, borderRadius: 4, background: "rgba(99,132,255,0.08)" }}>
@@ -1661,6 +1786,138 @@ export default function AttendancePlatform() {
                 </table>
               </div>
             </div>
+          )}
+
+          {/* ABSENCES VIEW */}
+          {activeTab === "absences" && (
+            <>
+              {/* Summary cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
+                <div className="glass-panel stat-card purple" style={{ padding: 20 }}>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Total Inasistencias</div>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{absenceData.length}</div>
+                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>días hábiles sin registro · {periodLabel}</div>
+                </div>
+                <div className="glass-panel stat-card blue" style={{ padding: 20 }}>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Días Hábiles del Período</div>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: "#818cf8", fontFamily: "'JetBrains Mono', monospace" }}>
+                    {periodDateRange ? getWorkingDays(periodDateRange.start, periodDateRange.end).length : 0}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>Lunes a Viernes</div>
+                </div>
+                <div className="glass-panel stat-card red" style={{ padding: 20 }}>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Empleados con Faltas</div>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: "#f87171", fontFamily: "'JetBrains Mono', monospace" }}>
+                    {new Set(absenceData.map((a) => a.employee)).size}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>con al menos 1 inasistencia</div>
+                </div>
+              </div>
+
+              {/* Detail table */}
+              <div className="glass-panel" style={{ padding: 24 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Detalle de Inasistencias</div>
+                    <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                      Días hábiles (Lun–Vie) sin ningún registro de entrada · Horario: {config.entryTime} – {config.exitTime}
+                    </div>
+                  </div>
+                  <button className="btn-ghost" onClick={exportAbsences} disabled={absenceData.length === 0}>
+                    <Icons.Download /> Exportar
+                  </button>
+                </div>
+
+                {absenceData.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 0", color: "#5a6580", fontSize: 14 }}>
+                    {records.length === 0
+                      ? "Sin datos cargados — sube un archivo para calcular inasistencias."
+                      : "No se detectaron inasistencias en el período seleccionado. ¡Asistencia perfecta!"}
+                  </div>
+                ) : (
+                  <div className="table-container" style={{ maxHeight: 500, overflowY: "auto" }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Empleado</th>
+                          <th>Fecha</th>
+                          <th>Día</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {absenceData.slice(0, 100).map((a, i) => {
+                          const d = new Date(a.date + "T00:00:00");
+                          const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+                          return (
+                            <tr key={i}>
+                              <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{a.employee}</td>
+                              <td>{formatDate(a.date)}</td>
+                              <td style={{ color: "#8892a8" }}>{dayNames[d.getDay()]}</td>
+                              <td><span className="badge badge-purple">✕ Inasistencia</span></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {absenceData.length > 100 && (
+                      <div style={{ padding: "12px 0", textAlign: "center", fontSize: 12, color: "#5a6580" }}>
+                        Mostrando 100 de {absenceData.length} inasistencias — exporta el archivo para ver todas.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Per-employee absence summary */}
+              {absenceData.length > 0 && (
+                <div className="glass-panel" style={{ padding: 24, marginTop: 16 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 16 }}>Resumen por Empleado</div>
+                  <div className="table-container" style={{ maxHeight: 360, overflowY: "auto" }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Empleado</th>
+                          <th>Inasistencias</th>
+                          <th>Días Hábiles Período</th>
+                          <th>% Ausentismo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const totalWD = periodDateRange ? getWorkingDays(periodDateRange.start, periodDateRange.end).length : 0;
+                          const byEmp: Record<string, number> = {};
+                          absenceData.forEach((a) => { byEmp[a.employee] = (byEmp[a.employee] || 0) + 1; });
+                          return Object.entries(byEmp)
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([emp, count]) => {
+                              const pct = totalWD > 0 ? Math.round((count / totalWD) * 100) : 0;
+                              return (
+                                <tr key={emp}>
+                                  <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{emp}</td>
+                                  <td><span className="badge badge-purple">{count}</span></td>
+                                  <td style={{ color: "#8892a8" }}>{totalWD}</td>
+                                  <td>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <div style={{ flex: 1, height: 4, borderRadius: 4, background: "rgba(99,132,255,0.08)", minWidth: 60 }}>
+                                        <div style={{
+                                          height: "100%", borderRadius: 4, width: `${pct}%`,
+                                          background: pct >= 30 ? "linear-gradient(90deg, #ef4444, #f87171)" : pct >= 15 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #a855f7, #c084fc)",
+                                        }} />
+                                      </div>
+                                      <span style={{ fontSize: 11, minWidth: 32 }}>{pct}%</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* DATABASE VIEW */}
