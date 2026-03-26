@@ -1,3 +1,6 @@
+import { getAuthState } from "./auth/authStore";
+import { refreshTokens } from "./auth/apiAuth";
+
 export type ApiAttendanceRecord = {
   id: number;
   employee: string;
@@ -30,10 +33,23 @@ type ChatHistory = { role: "user" | "model"; text: string };
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-  });
+  const doFetch = async () => {
+    const { accessToken } = getAuthState();
+    const extraHeaders: Record<string, string> = {};
+    if (accessToken) extraHeaders.Authorization = `Bearer ${accessToken}`;
+    return fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...extraHeaders, ...(init?.headers ?? {}) },
+      ...init,
+    });
+  };
+
+  let res = await doFetch();
+  if (res.status === 401) {
+    const refreshed = await refreshTokens();
+    if (refreshed) {
+      res = await doFetch();
+    }
+  }
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(txt || `HTTP ${res.status}`);
@@ -66,5 +82,33 @@ export async function postChat(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function kioskAuth(payload: { employeeCode: string; pin: string }) {
+  const res = await fetch(`${API_BASE}/api/kiosk/auth`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  return (await res.json()) as { accessToken: string; employee: { id: number; name: string; employeeCode: string } };
+}
+
+export async function clockIn(payload?: { employeeId?: number; deviceId?: string }) {
+  return request<{ ok: boolean; result: unknown }>("/api/attendance/clock-in", {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function clockOut(payload?: { employeeId?: number; deviceId?: string }) {
+  return request<{ ok: boolean; result: unknown }>("/api/attendance/clock-out", {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function getTodayAttendance() {
+  return request<{ today: unknown | null }>("/api/attendance/me/today");
 }
 

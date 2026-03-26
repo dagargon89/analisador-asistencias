@@ -18,6 +18,10 @@ class AttendanceRecordModel extends Model
         'check_out_time',
         'hours_worked',
         'status',
+        'data_source',
+        'first_punch_id',
+        'last_punch_id',
+        'closed_at',
         'source_import_id',
     ];
     protected bool $allowEmptyInserts = false;

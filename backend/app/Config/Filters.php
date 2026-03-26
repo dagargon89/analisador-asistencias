@@ -12,6 +12,9 @@ use CodeIgniter\Filters\InvalidChars;
 use CodeIgniter\Filters\PageCache;
 use CodeIgniter\Filters\PerformanceMetrics;
 use CodeIgniter\Filters\SecureHeaders;
+use App\Filters\JwtAuthFilter;
+use App\Filters\RoleFilter;
+use App\Filters\ThrottleFilter;
 
 class Filters extends BaseFilters
 {
@@ -34,6 +37,9 @@ class Filters extends BaseFilters
         'forcehttps'    => ForceHTTPS::class,
         'pagecache'     => PageCache::class,
         'performance'   => PerformanceMetrics::class,
+        'jwtAuth'       => JwtAuthFilter::class,
+        'role'          => RoleFilter::class,
+        'throttle'      => ThrottleFilter::class,
     ];
 
     /**

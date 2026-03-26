@@ -4,14 +4,22 @@ namespace App\Models;
 
 use CodeIgniter\Model;
 
-class EmployeeModel extends Model
+class RefreshTokenModel extends Model
 {
-    protected $table            = 'employees';
+    protected $table            = 'refresh_tokens';
     protected $primaryKey       = 'id';
     protected $returnType       = 'array';
     protected $useAutoIncrement = true;
     protected $protectFields    = true;
-    protected $allowedFields    = ['name', 'employee_code', 'is_active'];
+    protected $allowedFields    = [
+        'user_id',
+        'token_hash',
+        'expires_at',
+        'revoked_at',
+        'ip_address',
+        'user_agent',
+    ];
+
     protected bool $allowEmptyInserts = false;
     protected bool $updateOnlyChanged = true;
 

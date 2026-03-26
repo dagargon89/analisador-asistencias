@@ -4,14 +4,24 @@ namespace App\Models;
 
 use CodeIgniter\Model;
 
-class EmployeeModel extends Model
+class AuditLogModel extends Model
 {
-    protected $table            = 'employees';
+    protected $table            = 'audit_logs';
     protected $primaryKey       = 'id';
     protected $returnType       = 'array';
     protected $useAutoIncrement = true;
     protected $protectFields    = true;
-    protected $allowedFields    = ['name', 'employee_code', 'is_active'];
+    protected $allowedFields    = [
+        'actor_user_id',
+        'action',
+        'entity_type',
+        'entity_id',
+        'ip_address',
+        'request_id',
+        'meta_json',
+        'occurred_at',
+    ];
+
     protected bool $allowEmptyInserts = false;
     protected bool $updateOnlyChanged = true;
 

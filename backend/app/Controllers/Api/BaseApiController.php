@@ -35,5 +35,15 @@ abstract class BaseApiController extends BaseController
 
         return $configModel->find($id) ?? [];
     }
+
+    protected function jwtPayload(): array
+    {
+        $raw = $_SERVER['JWT_PAYLOAD_JSON'] ?? null;
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+        $payload = json_decode($raw, true);
+        return is_array($payload) ? $payload : [];
+    }
 }
 

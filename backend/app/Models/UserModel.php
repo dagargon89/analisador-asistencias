@@ -4,14 +4,24 @@ namespace App\Models;
 
 use CodeIgniter\Model;
 
-class EmployeeModel extends Model
+class UserModel extends Model
 {
-    protected $table            = 'employees';
+    protected $table            = 'users';
     protected $primaryKey       = 'id';
     protected $returnType       = 'array';
     protected $useAutoIncrement = true;
     protected $protectFields    = true;
-    protected $allowedFields    = ['name', 'employee_code', 'is_active'];
+    protected $allowedFields    = [
+        'email',
+        'password_hash',
+        'role',
+        'employee_id',
+        'is_active',
+        'failed_login_attempts',
+        'locked_until',
+        'last_login_at',
+    ];
+
     protected bool $allowEmptyInserts = false;
     protected bool $updateOnlyChanged = true;
 
