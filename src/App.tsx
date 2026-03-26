@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { GoogleGenAI } from "@google/genai";
+import { getRecords, postChat, postImport } from "./api";
 
 // --- Types ---
 type EntryStatus = "ontime" | "late" | "verylate";
@@ -420,27 +420,6 @@ function buildAttendanceJson(
   };
 }
 
-// --- Gemini System Prompt Builder ---
-function buildSystemPrompt(dataJson: AttendanceDataJson | null): string {
-  if (!dataJson) {
-    return "Eres un asistente de análisis de asistencia laboral. Aún no hay datos cargados en la aplicación. Indica al usuario que debe subir un archivo .xlsx primero.";
-  }
-  return `Eres un asistente experto en análisis de asistencia laboral. Responde siempre en español, de forma clara y concisa. Basa todas tus respuestas ÚNICAMENTE en los datos del siguiente JSON, sin inventar información.
-
-Si la pregunta no está relacionada con asistencia o estos datos, indica amablemente que solo puedes ayudar con análisis de asistencia.
-
-<datos_asistencia>
-${JSON.stringify(dataJson, null, 2)}
-</datos_asistencia>
-
-El JSON contiene:
-- "configuracion": horarios y tolerancias configurados
-- "resumen": estadísticas globales del período (incluye inasistenciasTotal)
-- "porEmpleado": métricas individuales de cada empleado (incluye campo "inasistencias" por empleado)
-- "registros": cada registro individual con empleado, fecha, entrada, salida, horas y estado (aTiempo/retardo/retardoMayor)
-- "inasistencias": lista de días hábiles (Lun-Vie) sin registro por empleado, es decir, las ausencias detectadas`;
-}
-
 // --- Markdown renderer (inline, no dependencies) ---
 function renderMarkdown(text: string): React.ReactNode {
   const lines = text.split("\n");
@@ -481,9 +460,9 @@ function renderMarkdown(text: string): React.ReactNode {
       continue;
     }
     // Bullet list (- or *)
-    if (/^[\-\*] /.test(line)) {
+    if (/^[-*] /.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && /^[\-\*] /.test(lines[i])) {
+      while (i < lines.length && /^[-*] /.test(lines[i])) {
         items.push(lines[i].slice(2));
         i++;
       }
@@ -586,7 +565,7 @@ export default function AttendancePlatform() {
   });
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const [attendanceJson, setAttendanceJson] = useState<AttendanceDataJson | null>(null);
+  const [lastSourceFile, setLastSourceFile] = useState("historial_db");
 
   // --- Chat state ---
   const [showChat, setShowChat] = useState(false);
@@ -594,10 +573,6 @@ export default function AttendancePlatform() {
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState<string>(
-    () => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("gemini_key") || ""
-  );
-  const [apiKeyInput, setApiKeyInput] = useState("");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   // Derive employees and months dynamically from loaded records
@@ -665,6 +640,11 @@ export default function AttendancePlatform() {
     return weeks;
   }, [selectedMonth]);
 
+  const attendanceJson = useMemo(
+    () => (records.length > 0 ? buildAttendanceJson(records, config, lastSourceFile) : null),
+    [records, config, lastSourceFile]
+  );
+
   // Auto-select most recent month when months change
   useEffect(() => {
     if (monthOptions.length === 0) return;
@@ -687,6 +667,20 @@ export default function AttendancePlatform() {
       setSelectedWeek((prev) => (prev >= weekOptions.length ? 0 : prev));
     }
   }, [reportPeriod, weekOptions]);
+
+  const loadPersistedRecords = useCallback(async () => {
+    const { records: persisted } = await getRecords();
+    setRecords(persisted);
+    if (persisted.length > 0) {
+      setLastSourceFile("historial_db");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPersistedRecords().catch(() => {
+      // Keep empty state when API is not available.
+    });
+  }, [loadPersistedRecords]);
 
   const filteredData = useMemo(() => {
     let data = records;
@@ -799,17 +793,9 @@ export default function AttendancePlatform() {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isChatLoading]);
 
-  const saveApiKey = useCallback(() => {
-    const key = apiKeyInput.trim();
-    if (!key) return;
-    localStorage.setItem("gemini_key", key);
-    setApiKey(key);
-    setApiKeyInput("");
-  }, [apiKeyInput]);
-
   const sendChatMessage = useCallback(async () => {
     const text = chatInput.trim();
-    if (!text || isChatLoading || !apiKey) return;
+    if (!text || isChatLoading || records.length === 0) return;
 
     const userMsg: ChatMessage = { role: "user", text };
     const updatedHistory = [...chatMessages, userMsg];
@@ -819,27 +805,23 @@ export default function AttendancePlatform() {
     setChatError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const contents = updatedHistory.map((m) => ({
-        role: m.role,
-        parts: [{ text: m.text }],
-      }));
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents,
-        config: {
-          systemInstruction: buildSystemPrompt(attendanceJson),
-          thinkingConfig: { thinkingBudget: 0 },
+      const response = await postChat({
+        message: text,
+        history: chatMessages,
+        filters: {
+          from: periodDateRange?.start,
+          to: periodDateRange?.end,
+          employee: selectedEmployee === "all" ? null : selectedEmployee,
         },
       });
-      const reply = response.text ?? "Sin respuesta.";
+      const reply = response.reply ?? "Sin respuesta.";
       setChatMessages((prev) => [...prev, { role: "model", text: reply }]);
     } catch (err) {
-      setChatError(err instanceof Error ? err.message : "Error al contactar Gemini.");
+      setChatError(err instanceof Error ? err.message : "Error al consultar el asistente.");
     } finally {
       setIsChatLoading(false);
     }
-  }, [chatInput, chatMessages, isChatLoading, apiKey, attendanceJson]);
+  }, [chatInput, chatMessages, isChatLoading, periodDateRange, selectedEmployee, records.length]);
 
   const handlePickFile = useCallback(() => {
     inputRef.current?.click();
@@ -982,25 +964,37 @@ export default function AttendancePlatform() {
     setUploadError(null);
     try {
       const { records: parsed, summary } = await parseXlsx(file);
-      setRecords(parsed);
-      setUploadSummary(summary);
       if (parsed.length === 0) {
         setUploadError("Se procesó el archivo pero no se encontraron registros válidos.");
-        setAttendanceJson(null);
       } else {
-        const json = buildAttendanceJson(parsed, config, file.name);
-        setAttendanceJson(json);
+        const result = await postImport({
+          fileName: file.name,
+          sourceType: file.name.toLowerCase().endsWith(".csv") ? "csv" : "xlsx",
+          config,
+          summary: {
+            totalRows: summary.totalRows,
+            invalidRows: summary.invalidRows,
+            duplicates: summary.duplicates,
+          },
+          records: parsed,
+        });
+        await loadPersistedRecords();
+        setLastSourceFile(file.name);
+        setUploadSummary({
+          ...summary,
+          validRows: result.stats.inserted + result.stats.updated,
+          duplicates: result.stats.duplicates,
+          uploadedAt: new Date().toLocaleString("es-MX"),
+        });
         setChatMessages([]);
       }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Error inesperado al procesar el archivo.");
-      setRecords([]);
-      setAttendanceJson(null);
     } finally {
       setIsUploading(false);
       e.target.value = "";
     }
-  }, [config]);
+  }, [config, loadPersistedRecords]);
 
   return (
     <div style={{
@@ -2108,7 +2102,7 @@ sin importar mayúsculas o tildes.`}</pre>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Asistente IA</div>
               <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ color: "#5a6580" }}>gemini-3-flash</span>
+                <span style={{ color: "#5a6580" }}>chat + BBDD</span>
                 {attendanceJson ? (
                   <span style={{ color: "#34d399" }}>· JSON listo ✓</span>
                 ) : (
@@ -2148,154 +2142,111 @@ sin importar mayúsculas o tildes.`}</pre>
             )}
           </div>
 
-          {/* Sin API key */}
-          {!apiKey && (
-            <div style={{ padding: 20, flex: 1, display: "flex", flexDirection: "column", gap: 12, justifyContent: "center" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>
-                Configura tu API Key de Gemini
+          {/* Mensajes */}
+          <div style={{
+            flex: 1, overflowY: "auto", padding: "16px 16px 8px",
+            display: "flex", flexDirection: "column", gap: 10,
+          }}>
+            {/* Estado vacío */}
+            {chatMessages.length === 0 && (
+              <div style={{ textAlign: "center", margin: "auto", padding: "0 16px" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>
+                  {records.length === 0
+                    ? "Carga datos primero"
+                    : "¿En qué puedo ayudarte?"}
+                </div>
+                <div style={{ fontSize: 12, color: "#5a6580", lineHeight: 1.6 }}>
+                  {records.length === 0
+                    ? "Sube un archivo .xlsx para poder analizar asistencias."
+                    : "Pregúntame sobre puntualidad, retardos, horas trabajadas o cualquier análisis del historial guardado en la base de datos."}
+                </div>
+                {records.length > 0 && (
+                  <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {[
+                      "¿Quién tuvo más retardos?",
+                      "Dame un resumen ejecutivo",
+                      "¿Cuál es el promedio de horas trabajadas?",
+                    ].map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => { setChatInput(q); }}
+                        style={{
+                          background: "rgba(99,132,255,0.08)",
+                          border: "1px solid rgba(99,132,255,0.15)",
+                          borderRadius: 8, padding: "7px 12px",
+                          color: "#818cf8", fontSize: 12, cursor: "pointer",
+                          textAlign: "left", fontFamily: "inherit",
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize: 12, color: "#5a6580", lineHeight: 1.6 }}>
-                Obtén una clave gratuita en{" "}
-                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
-                  style={{ color: "#6384ff" }}>aistudio.google.com</a>.
-              </div>
-              <input
-                className="input-field"
-                type="password"
-                placeholder="AIza..."
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveApiKey()}
-              />
-              <button className="btn-primary" onClick={saveApiKey} style={{ justifyContent: "center" }}>
-                Guardar clave
-              </button>
-              <div style={{ fontSize: 10, color: "#3d4f6f", lineHeight: 1.5 }}>
-                La clave se guarda solo en tu navegador (localStorage). También puedes definir VITE_GEMINI_API_KEY en el archivo .env.
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* Con API key */}
-          {apiKey && (
-            <>
-              {/* Mensajes */}
+            {/* Burbujas */}
+            {chatMessages.map((msg, i) => (
+              <div
+                key={i}
+                className={msg.role === "user" ? "chat-msg-user" : "chat-msg-model"}
+              >
+                {msg.role === "user" ? msg.text : renderMarkdown(msg.text)}
+              </div>
+            ))}
+
+            {/* Indicador de carga */}
+            {isChatLoading && (
+              <div className="chat-msg-model" style={{ display: "flex", gap: 5, alignItems: "center", padding: "12px 14px" }}>
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+              </div>
+            )}
+
+            {/* Error */}
+            {chatError && (
               <div style={{
-                flex: 1, overflowY: "auto", padding: "16px 16px 8px",
-                display: "flex", flexDirection: "column", gap: 10,
+                background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#f87171",
               }}>
-                {/* Estado vacío */}
-                {chatMessages.length === 0 && (
-                  <div style={{ textAlign: "center", margin: "auto", padding: "0 16px" }}>
-                    <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>
-                      {records.length === 0
-                        ? "Carga datos primero"
-                        : "¿En qué puedo ayudarte?"}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#5a6580", lineHeight: 1.6 }}>
-                      {records.length === 0
-                        ? "Sube un archivo .xlsx para poder analizar asistencias."
-                        : "Pregúntame sobre puntualidad, retardos, horas trabajadas o cualquier análisis de los datos cargados."}
-                    </div>
-                    {records.length > 0 && (
-                      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
-                        {[
-                          "¿Quién tuvo más retardos?",
-                          "Dame un resumen ejecutivo",
-                          "¿Cuál es el promedio de horas trabajadas?",
-                        ].map((q) => (
-                          <button
-                            key={q}
-                            onClick={() => { setChatInput(q); }}
-                            style={{
-                              background: "rgba(99,132,255,0.08)",
-                              border: "1px solid rgba(99,132,255,0.15)",
-                              borderRadius: 8, padding: "7px 12px",
-                              color: "#818cf8", fontSize: 12, cursor: "pointer",
-                              textAlign: "left", fontFamily: "inherit",
-                              transition: "all 0.2s",
-                            }}
-                          >
-                            {q}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Burbujas */}
-                {chatMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={msg.role === "user" ? "chat-msg-user" : "chat-msg-model"}
-                  >
-                    {msg.role === "user" ? msg.text : renderMarkdown(msg.text)}
-                  </div>
-                ))}
-
-                {/* Indicador de carga */}
-                {isChatLoading && (
-                  <div className="chat-msg-model" style={{ display: "flex", gap: 5, alignItems: "center", padding: "12px 14px" }}>
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                  </div>
-                )}
-
-                {/* Error */}
-                {chatError && (
-                  <div style={{
-                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-                    borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#f87171",
-                  }}>
-                    {chatError}
-                  </div>
-                )}
-
-                <div ref={chatBottomRef} />
+                {chatError}
               </div>
+            )}
 
-              {/* Input */}
-              <div className="chat-input-row">
-                <textarea
-                  className="chat-input"
-                  rows={1}
-                  placeholder={records.length === 0 ? "Carga datos para comenzar..." : "Escribe tu pregunta..."}
-                  value={chatInput}
-                  disabled={records.length === 0 || isChatLoading}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      sendChatMessage();
-                    }
-                  }}
-                  style={{ height: 38, lineHeight: "1.4" }}
-                />
-                <button
-                  className="chat-send-btn"
-                  onClick={sendChatMessage}
-                  disabled={!chatInput.trim() || isChatLoading || records.length === 0}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-                  </svg>
-                </button>
-              </div>
+            <div ref={chatBottomRef} />
+          </div>
 
-              {/* Cambiar API key */}
-              <div style={{ padding: "6px 16px 10px", display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  onClick={() => { setApiKey(""); localStorage.removeItem("gemini_key"); }}
-                  style={{ background: "none", border: "none", color: "#3d4f6f", cursor: "pointer", fontSize: 10, fontFamily: "inherit" }}
-                >
-                  Cambiar API key
-                </button>
-              </div>
-            </>
-          )}
+          {/* Input */}
+          <div className="chat-input-row">
+            <textarea
+              className="chat-input"
+              rows={1}
+              placeholder={records.length === 0 ? "Carga datos para comenzar..." : "Escribe tu pregunta..."}
+              value={chatInput}
+              disabled={records.length === 0 || isChatLoading}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendChatMessage();
+                }
+              }}
+              style={{ height: 38, lineHeight: "1.4" }}
+            />
+            <button
+              className="chat-send-btn"
+              onClick={sendChatMessage}
+              disabled={!chatInput.trim() || isChatLoading || records.length === 0}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
         </div>
       )}
 

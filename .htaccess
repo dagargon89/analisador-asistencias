@@ -1,0 +1,15 @@
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # API CodeIgniter 4
+  RewriteRule ^api/(.*)$ backend/public/index.php/api/$1 [QSA,L]
+
+  # Frontend SPA fallback
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.html [L]
+</IfModule>
+

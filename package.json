@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "backend:serve": "php backend/spark serve --host localhost --port 8080"
   },
   "dependencies": {
     "@google/genai": "^1.46.0",
