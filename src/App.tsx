@@ -561,7 +561,7 @@ function PaginationControls({ page, totalItems, pageSize, onPageChange, itemLabe
   const end = Math.min(safePage * pageSize, totalItems);
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 12 }}>
+    <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
       <div style={{ fontSize: 11, color: "#5a6580" }}>
         {totalItems === 0 ? `Sin ${itemLabel}` : `Mostrando ${start}-${end} de ${totalItems} ${itemLabel}`}
       </div>
