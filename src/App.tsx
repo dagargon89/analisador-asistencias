@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { getRecords, postChat, postImport } from "./api";
+import { useAuth } from "./auth/AuthContext";
 
 // --- Types ---
 type EntryStatus = "ontime" | "late" | "verylate";
@@ -544,6 +545,7 @@ function inlineMarkdown(text: string): React.ReactNode {
 
 // --- Main App Component ---
 export default function AttendancePlatform() {
+  const { user, doLogout } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showSettings, setShowSettings] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
@@ -574,6 +576,14 @@ export default function AttendancePlatform() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const userInitials = useMemo(() => {
+    const localPart = (user?.email ?? "").split("@")[0]?.trim();
+    if (!localPart) return "US";
+    return localPart.slice(0, 2).toUpperCase();
+  }, [user?.email]);
 
   // Derive employees and months dynamically from loaded records
   const employees = useMemo(
@@ -667,6 +677,17 @@ export default function AttendancePlatform() {
       setSelectedWeek((prev) => (prev >= weekOptions.length ? 0 : prev));
     }
   }, [reportPeriod, weekOptions]);
+
+  useEffect(() => {
+    if (!isUserMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isUserMenuOpen]);
 
   const loadPersistedRecords = useCallback(async () => {
     const { records: persisted } = await getRecords();
@@ -1283,15 +1304,74 @@ export default function AttendancePlatform() {
           <button className="btn-ghost" onClick={() => setShowUpload(true)}>
             <Icons.Upload /> Subir Archivo
           </button>
-          <button className="btn-ghost" onClick={() => setShowSettings(true)}>
-            <Icons.Settings /> Config
-          </button>
-          <div style={{
-            width: 34, height: 34, borderRadius: 10,
-            background: "linear-gradient(135deg, #f59e0b, #ef4444)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 13, fontWeight: 700, color: "#fff", marginLeft: 8,
-          }}>PJ</div>
+          <div ref={userMenuRef} style={{ position: "relative", marginLeft: 8 }}>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={isUserMenuOpen}
+              aria-label="Abrir menú de usuario"
+              onClick={() => setIsUserMenuOpen((prev) => !prev)}
+              style={{
+                width: 34, height: 34, borderRadius: 10,
+                background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 13, fontWeight: 700, color: "#fff",
+                border: "none", cursor: "pointer",
+              }}
+            >
+              {userInitials}
+            </button>
+            {isUserMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  minWidth: 220,
+                  background: "rgba(10,14,23,0.98)",
+                  border: "1px solid rgba(99,132,255,0.2)",
+                  borderRadius: 12,
+                  boxShadow: "0 10px 26px rgba(0,0,0,0.4)",
+                  padding: 8,
+                }}
+              >
+                <div style={{
+                  fontSize: 11,
+                  color: "#8fa0c5",
+                  padding: "8px 10px",
+                  borderBottom: "1px solid rgba(99,132,255,0.15)",
+                  marginBottom: 6,
+                }}>
+                  {user?.email} ({user?.role})
+                </div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="btn-ghost"
+                  onClick={() => {
+                    setShowSettings(true);
+                    setIsUserMenuOpen(false);
+                  }}
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                >
+                  <Icons.Settings /> Configuración
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="btn-ghost"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    void doLogout();
+                  }}
+                  style={{ width: "100%", justifyContent: "flex-start", marginTop: 4 }}
+                >
+                  Salir
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

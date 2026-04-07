@@ -70,17 +70,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return (
-    <>
-      <div style={{ position: "fixed", top: 10, right: 14, zIndex: 9999, display: "flex", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 11, color: "#8fa0c5", background: "rgba(10,14,23,0.9)", border: "1px solid rgba(99,132,255,0.2)", borderRadius: 8, padding: "4px 8px" }}>
-          {user?.email} ({user?.role})
-        </span>
-        <button onClick={() => void doLogout()} style={{ ...btnStyle, padding: "6px 10px", fontSize: 11 }}>Salir</button>
-      </div>
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }
 
 const inputStyle: React.CSSProperties = {
