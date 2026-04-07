@@ -29,6 +29,7 @@ type UploadSummary = {
   validRows: number;
   invalidRows: number;
   duplicates: number;
+  skippedExisting?: number;
   employeesDetected: number;
   uploadedAt: string;
 };
@@ -1003,7 +1004,8 @@ export default function AttendancePlatform() {
         setLastSourceFile(file.name);
         setUploadSummary({
           ...summary,
-          validRows: result.stats.inserted + result.stats.updated,
+          validRows: result.stats.inserted,
+          skippedExisting: result.stats.skippedExisting,
           duplicates: result.stats.duplicates,
           uploadedAt: new Date().toLocaleString("es-MX"),
         });
@@ -2024,7 +2026,7 @@ export default function AttendancePlatform() {
                       <th>Archivo</th>
                       <th>Fecha de Carga</th>
                       <th>Registros Nuevos</th>
-                      <th>Duplicados</th>
+                      <th>Omitidos</th>
                       <th>Estado</th>
                     </tr>
                   </thead>
@@ -2400,6 +2402,11 @@ sin importar mayúsculas o tildes.`}</pre>
                     {uploadSummary.duplicates > 0 && (
                       <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#fbbf24" }}>
                         <Icons.Alert /> Duplicados omitidos: {uploadSummary.duplicates}
+                      </div>
+                    )}
+                    {(uploadSummary.skippedExisting ?? 0) > 0 && (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#fbbf24" }}>
+                        <Icons.Alert /> Ya existentes en BD omitidos: {uploadSummary.skippedExisting}
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#34d399" }}>

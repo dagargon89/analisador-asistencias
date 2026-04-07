@@ -67,7 +67,11 @@ export async function getRecords(params?: { from?: string; to?: string; employee
 }
 
 export async function postImport(payload: ImportPayload) {
-  return request<{ ok: boolean; importId: number; stats: { received: number; inserted: number; updated: number; duplicates: number } }>(
+  return request<{
+    ok: boolean;
+    importId: number;
+    stats: { received: number; inserted: number; updated: number; skippedExisting: number; duplicates: number };
+  }>(
     "/api/import",
     { method: "POST", body: JSON.stringify(payload) }
   );

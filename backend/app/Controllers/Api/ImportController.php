@@ -30,10 +30,12 @@ class ImportController extends BaseApiController
         $employeeModel = model(\App\Models\EmployeeModel::class);
         $importModel = model(\App\Models\ImportModel::class);
         $configModel = model(\App\Models\AppConfigModel::class);
-
-        $db->transBegin();
+        $transactionStarted = false;
 
         try {
+            $db->transBegin();
+            $transactionStarted = true;
+
             $configModel->where('is_active', 1)->set(['is_active' => 0])->update();
             $configModel->insert([
                 'entry_time' => $this->normalizeTime($entryTime),
@@ -56,7 +58,7 @@ class ImportController extends BaseApiController
             ], true);
 
             $uniqueRows = [];
-            $duplicates = 0;
+            $duplicatesInFile = 0;
             foreach ($records as $row) {
                 $employee = trim((string) ($row['employee'] ?? ''));
                 $date = (string) ($row['date'] ?? '');
@@ -66,7 +68,7 @@ class ImportController extends BaseApiController
                 }
                 $key = $employee . '|' . $date . '|' . $entry;
                 if (isset($uniqueRows[$key])) {
-                    $duplicates++;
+                    $duplicatesInFile++;
                     continue;
                 }
                 $uniqueRows[$key] = [
@@ -104,6 +106,7 @@ class ImportController extends BaseApiController
 
             $inserted = 0;
             $updated = 0;
+            $skippedExisting = 0;
 
             foreach ($uniqueRows as $row) {
                 $employeeId = $employeeByName[$row['employee']] ?? null;
@@ -116,15 +119,9 @@ class ImportController extends BaseApiController
                     $toleranceMinutes,
                     $lateThresholdMinutes
                 );
-                $sql = "INSERT INTO attendance_records
+                $sql = "INSERT IGNORE INTO attendance_records
                     (employee_id, work_date, check_in_time, check_out_time, hours_worked, status, source_import_id, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-                    ON DUPLICATE KEY UPDATE
-                        check_out_time = VALUES(check_out_time),
-                        hours_worked = VALUES(hours_worked),
-                        status = VALUES(status),
-                        source_import_id = VALUES(source_import_id),
-                        updated_at = NOW()";
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
                 $result = $db->query($sql, [
                     $employeeId,
                     $row['date'],
@@ -141,9 +138,11 @@ class ImportController extends BaseApiController
                 if ($affected === 1) {
                     $inserted++;
                 } else {
-                    $updated++;
+                    $skippedExisting++;
                 }
             }
+
+            $duplicates = $duplicatesInFile + $skippedExisting;
 
             $importModel->update($importId, [
                 'records_inserted' => $inserted,
@@ -163,11 +162,18 @@ class ImportController extends BaseApiController
                     'received' => count($records),
                     'inserted' => $inserted,
                     'updated' => $updated,
+                    'skippedExisting' => $skippedExisting,
                     'duplicates' => $duplicates,
                 ],
             ]);
         } catch (Throwable $e) {
-            $db->transRollback();
+            if ($transactionStarted) {
+                try {
+                    $db->transRollback();
+                } catch (Throwable) {
+                    // Ignore rollback failures when the connection is unavailable.
+                }
+            }
             log_message('error', 'Import failed: {message}', ['message' => $e->getMessage()]);
             return $this->failServerError('No se pudo guardar la importación: ' . $e->getMessage());
         }
