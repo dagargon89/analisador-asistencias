@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import * as XLSX from "xlsx";
-import { getEmployees, getRecords, postChat, postImport } from "./api";
+import { getEmployees, getRecords, getSettings, postChat, postImport, updateSettings } from "./api";
 import { useAuth } from "./auth/AuthContext";
 
 // --- Types ---
@@ -21,6 +21,20 @@ type Config = {
   toleranceMinutes: number;
   lateThresholdMinutes: number;
   workingHoursPerDay: number;
+};
+
+type LaborRulesConfig = {
+  lateToleranceMinutes: number;
+  lateFormalFromNthInMonth: number;
+  directLateAfterTolerance: boolean;
+  formalLateActaAtNth: number;
+  actasForTerminationInYear: number;
+  absenceJustificationDeadlineHours: number;
+  absenceSuspensionDays1: number;
+  absenceSuspensionDays2: number;
+  absenceSuspensionDays3: number;
+  absenceTerminationFromCount: number;
+  repeatOffenseExtraSuspensionDays: number;
 };
 
 type UploadSummary = {
@@ -684,6 +698,21 @@ export default function AttendancePlatform() {
     lateThresholdMinutes: 30,
     workingHoursPerDay: 8.5,
   });
+  const [laborRules, setLaborRules] = useState<LaborRulesConfig>({
+    lateToleranceMinutes: 15,
+    lateFormalFromNthInMonth: 4,
+    directLateAfterTolerance: true,
+    formalLateActaAtNth: 5,
+    actasForTerminationInYear: 3,
+    absenceJustificationDeadlineHours: 48,
+    absenceSuspensionDays1: 1,
+    absenceSuspensionDays2: 2,
+    absenceSuspensionDays3: 3,
+    absenceTerminationFromCount: 4,
+    repeatOffenseExtraSuspensionDays: 1,
+  });
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [lastSourceFile, setLastSourceFile] = useState("historial_db");
@@ -845,6 +874,12 @@ export default function AttendancePlatform() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isUserMenuOpen]);
 
+  useEffect(() => {
+    if (showSettings) {
+      setSettingsError(null);
+    }
+  }, [showSettings]);
+
   const loadPersistedRecords = useCallback(async () => {
     const { records: persisted } = await getRecords();
     setRecords(persisted);
@@ -864,6 +899,30 @@ export default function AttendancePlatform() {
     );
   }, []);
 
+  const loadSettings = useCallback(async () => {
+    const { schedule, laborRules: rules } = await getSettings();
+    setConfig({
+      entryTime: schedule.entryTime,
+      exitTime: schedule.exitTime,
+      toleranceMinutes: schedule.toleranceMinutes,
+      lateThresholdMinutes: schedule.lateThresholdMinutes,
+      workingHoursPerDay: schedule.workingHoursPerDay,
+    });
+    setLaborRules({
+      lateToleranceMinutes: schedule.toleranceMinutes,
+      lateFormalFromNthInMonth: rules.lateFormalFromNthInMonth,
+      directLateAfterTolerance: rules.directLateAfterTolerance,
+      formalLateActaAtNth: rules.formalLateActaAtNth,
+      actasForTerminationInYear: rules.actasForTerminationInYear,
+      absenceJustificationDeadlineHours: rules.absenceJustificationDeadlineHours,
+      absenceSuspensionDays1: rules.absenceSuspensionDays1,
+      absenceSuspensionDays2: rules.absenceSuspensionDays2,
+      absenceSuspensionDays3: rules.absenceSuspensionDays3,
+      absenceTerminationFromCount: rules.absenceTerminationFromCount,
+      repeatOffenseExtraSuspensionDays: rules.repeatOffenseExtraSuspensionDays,
+    });
+  }, []);
+
   useEffect(() => {
     void loadPersistedRecords().catch(() => {
       // Keep empty state when API is not available.
@@ -875,6 +934,12 @@ export default function AttendancePlatform() {
       // Keep fallback to record-derived employees when roster endpoint is unavailable.
     });
   }, [loadActiveEmployees]);
+
+  useEffect(() => {
+    void loadSettings().catch(() => {
+      // Keep local defaults when settings endpoint is unavailable.
+    });
+  }, [loadSettings]);
 
   const rawPeriodRange = useMemo((): { start: string; end: string } | null => {
     if (reportPeriod === "month" && selectedMonth) {
@@ -1098,6 +1163,33 @@ export default function AttendancePlatform() {
   const handlePickFile = useCallback(() => {
     inputRef.current?.click();
   }, []);
+
+  const handleSaveSettings = useCallback(async () => {
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      const response = await updateSettings({
+        schedule: {
+          entryTime: config.entryTime,
+          exitTime: config.exitTime,
+          toleranceMinutes: config.toleranceMinutes,
+          lateThresholdMinutes: config.lateThresholdMinutes,
+          workingHoursPerDay: config.workingHoursPerDay,
+        },
+        laborRules: {
+          ...laborRules,
+          lateToleranceMinutes: config.toleranceMinutes,
+        },
+      });
+      setConfig(response.settings.schedule);
+      setLaborRules(response.settings.laborRules);
+      setShowSettings(false);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : "No se pudo guardar la configuración.");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }, [config, laborRules]);
 
   const periodLabel = useMemo(() => {
     if (reportPeriod === "month" && selectedMonth) {
@@ -1411,7 +1503,8 @@ export default function AttendancePlatform() {
         .modal-overlay {
           position: fixed; inset: 0; z-index: 100;
           background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
-          display: flex; align-items: center; justify-content: center;
+          display: flex; align-items: flex-start; justify-content: center;
+          overflow-y: auto; padding: 24px 0;
           animation: fadeIn 0.2s ease;
         }
         .modal-content {
@@ -1419,6 +1512,7 @@ export default function AttendancePlatform() {
           border: 1px solid rgba(99,132,255,0.12);
           border-radius: 20px; padding: 32px;
           max-width: 520px; width: 90%;
+          max-height: calc(100vh - 48px); overflow-y: auto;
           box-shadow: 0 24px 80px rgba(0,0,0,0.5);
           animation: slideUp 0.3s ease;
         }
@@ -2524,9 +2618,91 @@ sin importar mayúsculas o tildes.`}</pre>
               </div>
             </div>
 
+            <div style={{
+              marginTop: 16, padding: 16, borderRadius: 12,
+              background: "rgba(99,132,255,0.03)", border: "1px solid rgba(99,132,255,0.08)",
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#818cf8", marginBottom: 12 }}>
+                Reglas Laborales (Reglamento)
+              </div>
+              <div style={{ fontSize: 11, color: "#5a6580", marginBottom: 10 }}>
+                La tolerancia de llegada se toma desde “Configuración de Horarios” para evitar duplicidad.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Retardo formal desde llegada #</label>
+                  <input type="number" className="input-field" value={laborRules.lateFormalFromNthInMonth}
+                    onChange={e => setLaborRules({ ...laborRules, lateFormalFromNthInMonth: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Acta por retardos desde #</label>
+                  <input type="number" className="input-field" value={laborRules.formalLateActaAtNth}
+                    onChange={e => setLaborRules({ ...laborRules, formalLateActaAtNth: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Actas para rescisión (año)</label>
+                  <input type="number" className="input-field" value={laborRules.actasForTerminationInYear}
+                    onChange={e => setLaborRules({ ...laborRules, actasForTerminationInYear: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Límite justificación falta (horas)</label>
+                  <input type="number" className="input-field" value={laborRules.absenceJustificationDeadlineHours}
+                    onChange={e => setLaborRules({ ...laborRules, absenceJustificationDeadlineHours: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Rescisión por faltas desde #</label>
+                  <input type="number" className="input-field" value={laborRules.absenceTerminationFromCount}
+                    onChange={e => setLaborRules({ ...laborRules, absenceTerminationFromCount: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Suspensión por 1 falta (días)</label>
+                  <input type="number" className="input-field" value={laborRules.absenceSuspensionDays1}
+                    onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays1: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Suspensión por 2 faltas (días)</label>
+                  <input type="number" className="input-field" value={laborRules.absenceSuspensionDays2}
+                    onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays2: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Suspensión por 3 faltas (días)</label>
+                  <input type="number" className="input-field" value={laborRules.absenceSuspensionDays3}
+                    onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays3: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Reincidencia: días extra</label>
+                  <input type="number" className="input-field" value={laborRules.repeatOffenseExtraSuspensionDays}
+                    onChange={e => setLaborRules({ ...laborRules, repeatOffenseExtraSuspensionDays: Number(e.target.value) })} />
+                </div>
+              </div>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#8892a8", marginTop: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={laborRules.directLateAfterTolerance}
+                  onChange={e => setLaborRules({ ...laborRules, directLateAfterTolerance: e.target.checked })}
+                />
+                Considerar retardo directo al rebasar tolerancia
+              </label>
+            </div>
+
+            {settingsError && (
+              <div style={{
+                marginTop: 14,
+                fontSize: 12,
+                color: "#fda4af",
+                background: "rgba(127,29,29,0.25)",
+                border: "1px solid rgba(239,68,68,0.35)",
+                borderRadius: 8,
+                padding: "8px 10px",
+              }}>
+                {settingsError}
+              </div>
+            )}
+
             <button className="btn-primary" style={{ width: "100%", marginTop: 20, justifyContent: "center" }}
-              onClick={() => setShowSettings(false)}>
-              Guardar Configuración
+              onClick={() => void handleSaveSettings()}
+              disabled={settingsSaving}>
+              {settingsSaving ? "Guardando..." : "Guardar Configuración"}
             </button>
           </div>
         </div>

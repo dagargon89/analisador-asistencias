@@ -30,6 +30,8 @@ $routes->group('api', ['filter' => 'cors'], static function ($routes): void {
             $routes->get('summary', 'Api\AttendanceController::summary');
             $routes->get('incidents', 'Api\AttendanceController::incidents');
             $routes->get('absences', 'Api\AttendanceController::absences');
+            $routes->get('settings', 'Api\SettingsController::show');
+            $routes->put('settings', 'Api\SettingsController::update');
             $routes->post('import', 'Api\ImportController::store');
             $routes->post('chat', 'Api\ChatController::ask');
         });

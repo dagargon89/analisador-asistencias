@@ -17,6 +17,28 @@ export type ApiEmployee = {
   isActive: boolean;
 };
 
+export type ScheduleSettings = {
+  entryTime: string;
+  exitTime: string;
+  toleranceMinutes: number;
+  lateThresholdMinutes: number;
+  workingHoursPerDay: number;
+};
+
+export type LaborRulesSettings = {
+  lateToleranceMinutes: number;
+  lateFormalFromNthInMonth: number;
+  directLateAfterTolerance: boolean;
+  formalLateActaAtNth: number;
+  actasForTerminationInYear: number;
+  absenceJustificationDeadlineHours: number;
+  absenceSuspensionDays1: number;
+  absenceSuspensionDays2: number;
+  absenceSuspensionDays3: number;
+  absenceTerminationFromCount: number;
+  repeatOffenseExtraSuspensionDays: number;
+};
+
 export type ImportPayload = {
   fileName: string;
   sourceType: "xlsx" | "csv";
@@ -75,6 +97,17 @@ export async function getRecords(params?: { from?: string; to?: string; employee
 
 export async function getEmployees() {
   return request<{ employees: ApiEmployee[] }>("/api/employees");
+}
+
+export async function getSettings() {
+  return request<{ schedule: ScheduleSettings; laborRules: LaborRulesSettings }>("/api/settings");
+}
+
+export async function updateSettings(payload: { schedule?: ScheduleSettings; laborRules?: LaborRulesSettings }) {
+  return request<{ ok: boolean; settings: { schedule: ScheduleSettings; laborRules: LaborRulesSettings } }>("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function postImport(payload: ImportPayload) {
