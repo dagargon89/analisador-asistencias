@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { kioskAuth } from "./api";
+import { useTheme } from "./theme/ThemeContext";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
 
 type KioskEmployee = { id: number; name: string; employeeCode: string };
 
 export default function KioskShell() {
+  const { theme, toggleTheme } = useTheme();
   const [employeeCode, setEmployeeCode] = useState("");
   const [pin, setPin] = useState("");
   const [token, setToken] = useState<string | null>(null);
@@ -34,11 +36,16 @@ export default function KioskShell() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#090d16", color: "#e2e8f0", display: "grid", placeItems: "center", padding: 20 }}>
-      <div style={{ width: "min(560px, 96vw)", background: "linear-gradient(135deg, rgba(20,27,45,0.95), rgba(15,20,35,0.95))", border: "1px solid rgba(99,132,255,0.2)", borderRadius: 16, padding: 24 }}>
+    <div style={{ minHeight: "100vh", background: "var(--color-bg)", color: "var(--color-text)", display: "grid", placeItems: "center", padding: 20 }}>
+      <div style={{ width: "min(560px, 96vw)", background: "var(--color-panel-bg)", border: "1px solid var(--color-border-strong)", borderRadius: 16, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div style={{ fontSize: 24, fontWeight: 700 }}>Checador Kiosko</div>
-          <a href="/" style={{ color: "#90a0ff", fontSize: 13 }}>Ir a panel admin</a>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button type="button" style={ghostBtnStyle} onClick={toggleTheme}>
+              {theme === "dark" ? "Modo light" : "Modo dark"}
+            </button>
+            <a href="/" style={{ color: "var(--color-link)", fontSize: 13 }}>Ir a panel admin</a>
+          </div>
         </div>
         {!token && (
           <form
@@ -68,8 +75,8 @@ export default function KioskShell() {
 
         {token && employee && (
           <div style={{ display: "grid", gap: 12 }}>
-            <div style={{ fontSize: 14, color: "#8ea0c8" }}>
-              Empleado: <strong style={{ color: "#e2e8f0" }}>{employee.name}</strong> ({employee.employeeCode})
+            <div style={{ fontSize: 14, color: "var(--color-text-muted)" }}>
+              Empleado: <strong style={{ color: "var(--color-text)" }}>{employee.name}</strong> ({employee.employeeCode})
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button style={btnStyle} disabled={busy} onClick={() => void callPunch("/api/attendance/clock-in")}>Checar entrada</button>
@@ -79,18 +86,18 @@ export default function KioskShell() {
           </div>
         )}
 
-        {message && <div style={{ marginTop: 12, fontSize: 13, color: "#c5cde0", whiteSpace: "pre-wrap" }}>{message}</div>}
+        {message && <div style={{ marginTop: 12, fontSize: 13, color: "var(--color-text-soft)", whiteSpace: "pre-wrap" }}>{message}</div>}
       </div>
     </div>
   );
 }
 
 const inputStyle: React.CSSProperties = {
-  background: "rgba(10,14,23,0.8)",
-  border: "1px solid rgba(99,132,255,0.25)",
+  background: "var(--color-input-bg)",
+  border: "1px solid var(--color-border-strong)",
   borderRadius: 10,
   padding: "12px 12px",
-  color: "#e2e8f0",
+  color: "var(--color-text)",
   outline: "none",
   fontSize: 16,
 };
@@ -103,5 +110,15 @@ const btnStyle: React.CSSProperties = {
   color: "#fff",
   cursor: "pointer",
   fontWeight: 700,
+};
+
+const ghostBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid var(--color-border)",
+  color: "var(--color-text-muted)",
+  borderRadius: 10,
+  padding: "8px 10px",
+  cursor: "pointer",
+  fontSize: 12,
 };
 

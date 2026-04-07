@@ -5,17 +5,20 @@ import App from './App.tsx'
 import KioskShell from './KioskShell.tsx'
 import { AuthProvider } from './auth/AuthContext.tsx'
 import AuthGate from './auth/AuthGate.tsx'
+import { ThemeProvider } from './theme/ThemeContext.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {window.location.pathname.startsWith('/kiosk') ? (
-      <KioskShell />
-    ) : (
-      <AuthProvider>
-        <AuthGate>
-          <App />
-        </AuthGate>
-      </AuthProvider>
-    )}
+    <ThemeProvider>
+      {window.location.pathname.startsWith('/kiosk') ? (
+        <KioskShell />
+      ) : (
+        <AuthProvider>
+          <AuthGate>
+            <App />
+          </AuthGate>
+        </AuthProvider>
+      )}
+    </ThemeProvider>
   </StrictMode>,
 )

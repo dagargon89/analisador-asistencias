@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } fr
 import * as XLSX from "xlsx";
 import { getEmployees, getRecords, getSettings, postChat, postImport, updateSettings } from "./api";
 import { useAuth } from "./auth/AuthContext";
+import { useTheme } from "./theme/ThemeContext";
 
 // --- Types ---
 type EntryStatus = "ontime" | "late" | "verylate";
@@ -49,6 +50,7 @@ type UploadSummary = {
 };
 
 type EmployeeTableFilter = "all" | "withAttendance" | "withAbsences" | "withIncidents";
+type LateAccumulationFilter = "all" | "withFormalization" | "withActa" | "withEquivalentAbsence";
 
 // --- XLSX Parsing Utilities ---
 const FIELD_ALIASES = {
@@ -450,7 +452,7 @@ function renderMarkdown(text: string): React.ReactNode {
     // H3
     if (line.startsWith("### ")) {
       elements.push(
-        <div key={i} style={{ fontWeight: 700, fontSize: 13, color: "#e2e8f0", marginTop: 10, marginBottom: 2 }}>
+        <div key={i} style={{ fontWeight: 700, fontSize: 13, color: "var(--color-text)", marginTop: 10, marginBottom: 2 }}>
           {inlineMarkdown(line.slice(4))}
         </div>
       );
@@ -460,7 +462,7 @@ function renderMarkdown(text: string): React.ReactNode {
     // H2
     if (line.startsWith("## ")) {
       elements.push(
-        <div key={i} style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginTop: 12, marginBottom: 4, borderBottom: "1px solid rgba(99,132,255,0.15)", paddingBottom: 4 }}>
+        <div key={i} style={{ fontWeight: 700, fontSize: 14, color: "var(--color-text)", marginTop: 12, marginBottom: 4, borderBottom: "1px solid var(--color-border)", paddingBottom: 4 }}>
           {inlineMarkdown(line.slice(3))}
         </div>
       );
@@ -470,7 +472,7 @@ function renderMarkdown(text: string): React.ReactNode {
     // H1
     if (line.startsWith("# ")) {
       elements.push(
-        <div key={i} style={{ fontWeight: 700, fontSize: 15, color: "#fff", marginTop: 12, marginBottom: 6 }}>
+        <div key={i} style={{ fontWeight: 700, fontSize: 15, color: "var(--color-text)", marginTop: 12, marginBottom: 6 }}>
           {inlineMarkdown(line.slice(2))}
         </div>
       );
@@ -487,7 +489,7 @@ function renderMarkdown(text: string): React.ReactNode {
       elements.push(
         <ul key={`ul-${i}`} style={{ paddingLeft: 18, margin: "6px 0", display: "flex", flexDirection: "column", gap: 3 }}>
           {items.map((item, j) => (
-            <li key={j} style={{ fontSize: 13, color: "#c5cde0", lineHeight: 1.5 }}>
+            <li key={j} style={{ fontSize: 13, color: "var(--color-text-soft)", lineHeight: 1.5 }}>
               {inlineMarkdown(item)}
             </li>
           ))}
@@ -505,7 +507,7 @@ function renderMarkdown(text: string): React.ReactNode {
       elements.push(
         <ol key={`ol-${i}`} style={{ paddingLeft: 20, margin: "6px 0", display: "flex", flexDirection: "column", gap: 3 }}>
           {items.map((item, j) => (
-            <li key={j} style={{ fontSize: 13, color: "#c5cde0", lineHeight: 1.5 }}>
+            <li key={j} style={{ fontSize: 13, color: "var(--color-text-soft)", lineHeight: 1.5 }}>
               {inlineMarkdown(item)}
             </li>
           ))}
@@ -515,7 +517,7 @@ function renderMarkdown(text: string): React.ReactNode {
     }
     // Horizontal rule
     if (/^---+$/.test(line.trim())) {
-      elements.push(<hr key={i} style={{ border: "none", borderTop: "1px solid rgba(99,132,255,0.12)", margin: "8px 0" }} />);
+      elements.push(<hr key={i} style={{ border: "none", borderTop: "1px solid var(--color-border)", margin: "8px 0" }} />);
       i++;
       continue;
     }
@@ -527,7 +529,7 @@ function renderMarkdown(text: string): React.ReactNode {
     }
     // Normal paragraph
     elements.push(
-      <div key={i} style={{ fontSize: 13, color: "#c5cde0", lineHeight: 1.65 }}>
+      <div key={i} style={{ fontSize: 13, color: "var(--color-text-soft)", lineHeight: 1.65 }}>
         {inlineMarkdown(line)}
       </div>
     );
@@ -542,15 +544,15 @@ function inlineMarkdown(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i} style={{ color: "#e2e8f0", fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
+      return <strong key={i} style={{ color: "var(--color-text)", fontWeight: 700 }}>{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith("*") && part.endsWith("*")) {
-      return <em key={i} style={{ color: "#b0b8cc", fontStyle: "italic" }}>{part.slice(1, -1)}</em>;
+      return <em key={i} style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>{part.slice(1, -1)}</em>;
     }
     if (part.startsWith("`") && part.endsWith("`")) {
       return (
         <code key={i} style={{
-          background: "rgba(99,132,255,0.12)", color: "#818cf8",
+          background: "var(--color-markdown-code-bg)", color: "var(--color-link)",
           padding: "1px 6px", borderRadius: 4,
           fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
         }}>{part.slice(1, -1)}</code>
@@ -576,14 +578,14 @@ function PaginationControls({ page, totalItems, pageSize, onPageChange, itemLabe
 
   return (
     <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
-      <div style={{ fontSize: 11, color: "#5a6580" }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
         {totalItems === 0 ? `Sin ${itemLabel}` : `Mostrando ${start}-${end} de ${totalItems} ${itemLabel}`}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <button className="btn-ghost" onClick={() => onPageChange(safePage - 1)} disabled={safePage <= 1}>
           Anterior
         </button>
-        <span style={{ fontSize: 11, color: "#8892a8", minWidth: 72, textAlign: "center" }}>
+        <span style={{ fontSize: 11, color: "var(--color-text-muted)", minWidth: 72, textAlign: "center" }}>
           Página {safePage}/{totalPages}
         </span>
         <button className="btn-ghost" onClick={() => onPageChange(safePage + 1)} disabled={safePage >= totalPages}>
@@ -649,9 +651,9 @@ function HelpTip({ text }: { text: string }) {
             right: side === "left" ? "calc(100% + 8px)" : undefined,
             transform: "translateY(-50%)",
             width: 240,
-            background: "#0f1726",
-            color: "#cbd5e1",
-            border: "1px solid rgba(99,132,255,0.25)",
+            background: "var(--color-tooltip-bg)",
+            color: "var(--color-tooltip-fg)",
+            border: "1px solid var(--color-border-strong)",
             borderRadius: 8,
             padding: "8px 10px",
             fontSize: 11,
@@ -671,6 +673,7 @@ function HelpTip({ text }: { text: string }) {
 // --- Main App Component ---
 export default function AttendancePlatform() {
   const { user, doLogout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showSettings, setShowSettings] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
@@ -686,11 +689,14 @@ export default function AttendancePlatform() {
   const [selectedEmployee, setSelectedEmployee] = useState("all");
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [employeeTableFilter, setEmployeeTableFilter] = useState<EmployeeTableFilter>("withAttendance");
+  const [lateAccumSearch, setLateAccumSearch] = useState("");
+  const [lateAccumFilter, setLateAccumFilter] = useState<LateAccumulationFilter>("all");
   const [dashboardEmployeesPage, setDashboardEmployeesPage] = useState(1);
   const [dailyPage, setDailyPage] = useState(1);
   const [employeesPage, setEmployeesPage] = useState(1);
   const [incidentsPage, setIncidentsPage] = useState(1);
   const [absencesPage, setAbsencesPage] = useState(1);
+  const [lateAccumPage, setLateAccumPage] = useState(1);
   const [config, setConfig] = useState<Config>({
     entryTime: "08:30",
     exitTime: "17:30",
@@ -752,6 +758,7 @@ export default function AttendancePlatform() {
   const PAGE_SIZE_EMPLOYEES = 12;
   const PAGE_SIZE_INCIDENTS = 50;
   const PAGE_SIZE_ABSENCES = 100;
+  const PAGE_SIZE_LATE_ACCUMULATION = 15;
 
   const recordEmployees = useMemo(
     () => [...new Set(records.map((r) => r.employee))].sort((a, b) => a.localeCompare(b)),
@@ -864,6 +871,10 @@ export default function AttendancePlatform() {
   }, [employeeSearch, employeeTableFilter, records, reportPeriod, selectedMonth, selectedWeek, selectedDay, selectedEmployee]);
 
   useEffect(() => {
+    setLateAccumPage(1);
+  }, [lateAccumSearch, lateAccumFilter, records, reportPeriod, selectedMonth, selectedWeek, selectedDay, selectedEmployee, laborRules, config]);
+
+  useEffect(() => {
     if (!isUserMenuOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
@@ -972,6 +983,25 @@ export default function AttendancePlatform() {
     }
     return data;
   }, [records, selectedEmployee, periodDateRange]);
+
+  const lateAccumulationRange = useMemo((): { start: string; end: string } | null => {
+    if (!selectedMonth) return null;
+    const [year, month] = selectedMonth.split("-").map(Number);
+    const monthStart = toIsoDate(new Date(year, month - 1, 1));
+    const monthEnd = toIsoDate(new Date(year, month, 0));
+    const cappedEnd = monthEnd > todayIso ? todayIso : monthEnd;
+    if (monthStart > cappedEnd) return null;
+    return { start: monthStart, end: cappedEnd };
+  }, [selectedMonth, todayIso]);
+
+  const lateAccumulationSourceData = useMemo(() => {
+    if (!lateAccumulationRange) return [];
+    let data = records.filter((r) => r.date >= lateAccumulationRange.start && r.date <= lateAccumulationRange.end);
+    if (selectedEmployee !== "all") {
+      data = data.filter((r) => r.employee === selectedEmployee);
+    }
+    return data;
+  }, [records, selectedEmployee, lateAccumulationRange]);
 
   const absenceBaseEmployees = useMemo(() => {
     if (selectedEmployee !== "all") {
@@ -1086,6 +1116,95 @@ export default function AttendancePlatform() {
     [filteredData, config]
   );
 
+  const lateAccumulationReport = useMemo(() => {
+    const baseEmployees =
+      selectedEmployee === "all"
+        ? employees
+        : employees.includes(selectedEmployee)
+          ? [selectedEmployee]
+          : [];
+    const map: Record<string, { name: string; late: number; veryLate: number }> = {};
+
+    baseEmployees.forEach((name) => {
+      map[name] = { name, late: 0, veryLate: 0 };
+    });
+
+    lateAccumulationSourceData.forEach((record) => {
+      if (!map[record.employee]) {
+        map[record.employee] = { name: record.employee, late: 0, veryLate: 0 };
+      }
+      const status = classifyEntry(record.entry, config);
+      if (status === "late") {
+        map[record.employee].late += 1;
+      } else if (status === "verylate") {
+        map[record.employee].veryLate += 1;
+      }
+    });
+
+    const formalFrom = Math.max(1, laborRules.lateFormalFromNthInMonth);
+    const actaAt = Math.max(1, laborRules.formalLateActaAtNth);
+    const terminationActas = Math.max(1, laborRules.actasForTerminationInYear);
+
+    return Object.values(map)
+      .map((row) => {
+        const totalComputable = laborRules.directLateAfterTolerance
+          ? row.late + row.veryLate
+          : row.veryLate;
+        const formalized = totalComputable >= formalFrom;
+        const actas = Math.floor(totalComputable / actaAt);
+        const equivalentAbsences = actas;
+        const progressInCurrentBlock = totalComputable % actaAt;
+        const progressPct = Math.round((progressInCurrentBlock / actaAt) * 100);
+        const nextActaIn = progressInCurrentBlock === 0 ? actaAt : actaAt - progressInCurrentBlock;
+
+        let sanctionLabel = "Sin sancion";
+        if (equivalentAbsences > 0) {
+          sanctionLabel = `${equivalentAbsences} falta(s) equivalente(s) + ${actas} acta(s)`;
+        } else if (formalized) {
+          sanctionLabel = "Retardo formal (sin falta equivalente aun)";
+        }
+        if (actas >= terminationActas) {
+          sanctionLabel += " • Riesgo por acumulacion anual";
+        }
+
+        return {
+          ...row,
+          totalComputable,
+          formalized,
+          actas,
+          equivalentAbsences,
+          progressPct,
+          nextActaIn,
+          sanctionLabel,
+        };
+      })
+      .sort((a, b) => {
+        if (b.equivalentAbsences !== a.equivalentAbsences) return b.equivalentAbsences - a.equivalentAbsences;
+        if (b.actas !== a.actas) return b.actas - a.actas;
+        if (b.totalComputable !== a.totalComputable) return b.totalComputable - a.totalComputable;
+        return a.name.localeCompare(b.name);
+      });
+  }, [employees, selectedEmployee, lateAccumulationSourceData, config, laborRules]);
+
+  const filteredLateAccumulationReport = useMemo(() => {
+    const searchKey = normalizeKey(lateAccumSearch);
+    return lateAccumulationReport.filter((row) => {
+      if (searchKey && !normalizeKey(row.name).includes(searchKey)) {
+        return false;
+      }
+      if (lateAccumFilter === "withFormalization" && !row.formalized) {
+        return false;
+      }
+      if (lateAccumFilter === "withActa" && row.actas === 0) {
+        return false;
+      }
+      if (lateAccumFilter === "withEquivalentAbsence" && row.equivalentAbsences === 0) {
+        return false;
+      }
+      return true;
+    });
+  }, [lateAccumSearch, lateAccumFilter, lateAccumulationReport]);
+
   const paginatedDashboardEmployees = useMemo(() => {
     const start = (dashboardEmployeesPage - 1) * PAGE_SIZE_DASHBOARD_EMPLOYEES;
     return filteredEmployeeReport.slice(start, start + PAGE_SIZE_DASHBOARD_EMPLOYEES);
@@ -1110,6 +1229,11 @@ export default function AttendancePlatform() {
     const start = (absencesPage - 1) * PAGE_SIZE_ABSENCES;
     return absenceData.slice(start, start + PAGE_SIZE_ABSENCES);
   }, [absenceData, absencesPage]);
+
+  const paginatedLateAccumulation = useMemo(() => {
+    const start = (lateAccumPage - 1) * PAGE_SIZE_LATE_ACCUMULATION;
+    return filteredLateAccumulationReport.slice(start, start + PAGE_SIZE_LATE_ACCUMULATION);
+  }, [lateAccumPage, filteredLateAccumulationReport]);
 
   const weekdayDistribution = useMemo(() => {
     const labels = ["Lun", "Mar", "Mié", "Jue", "Vie"];
@@ -1321,6 +1445,27 @@ export default function AttendancePlatform() {
     XLSX.writeFile(wb, `incidencias_${buildPeriodLabel()}.xlsx`);
   }, [filteredData, config, buildPeriodLabel]);
 
+  const exportLateAccumulation = useCallback(() => {
+    if (filteredLateAccumulationReport.length === 0) return;
+    const rows = filteredLateAccumulationReport.map((row) => ({
+      Empleado: row.name,
+      Retardos: row.late,
+      "Retardo Mayor": row.veryLate,
+      "Total Computable": row.totalComputable,
+      Formalizacion: row.formalized ? "Si" : "No",
+      Actas: row.actas,
+      "Faltas Equivalentes": row.equivalentAbsences,
+      "Progreso %": row.progressPct,
+      "Siguiente Acta (retardos)": row.nextActaIn,
+      "Estado / Sancion": row.sanctionLabel,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "RetardosAcumulados");
+    const periodSuffix = selectedMonth || buildPeriodLabel();
+    XLSX.writeFile(wb, `retardos_acumulados_${periodSuffix}.xlsx`);
+  }, [filteredLateAccumulationReport, selectedMonth, buildPeriodLabel]);
+
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1364,8 +1509,8 @@ export default function AttendancePlatform() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "#0a0e17",
-      color: "#e2e8f0",
+      background: "var(--color-bg)",
+      color: "var(--color-text)",
       fontFamily: "'DM Sans', 'Segoe UI', system-ui, sans-serif",
     }}>
       <style>{`
@@ -1373,13 +1518,13 @@ export default function AttendancePlatform() {
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #131825; }
-        ::-webkit-scrollbar-thumb { background: #2a3348; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #3d4f6f; }
+        ::-webkit-scrollbar-track { background: var(--color-scroll-track); }
+        ::-webkit-scrollbar-thumb { background: var(--color-scroll-thumb); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--color-scroll-thumb-hover); }
 
         .glass-panel {
-          background: linear-gradient(135deg, rgba(20,27,45,0.9), rgba(15,20,35,0.95));
-          border: 1px solid rgba(99,132,255,0.08);
+          background: var(--color-panel-bg);
+          border: 1px solid var(--color-border);
           border-radius: 16px;
           backdrop-filter: blur(20px);
         }
@@ -1414,12 +1559,12 @@ export default function AttendancePlatform() {
           border: none; cursor: pointer;
           font-size: 13px; font-weight: 500;
           font-family: inherit;
-          color: #8892a8; background: transparent;
+          color: var(--color-text-muted); background: transparent;
           transition: all 0.2s;
         }
-        .nav-btn:hover { color: #c5cde0; background: rgba(99,132,255,0.06); }
+        .nav-btn:hover { color: var(--color-text-soft); background: rgba(99,132,255,0.06); }
         .nav-btn.active {
-          color: #fff; background: rgba(99,132,255,0.12);
+          color: var(--color-text); background: rgba(99,132,255,0.12);
           box-shadow: 0 0 0 1px rgba(99,132,255,0.2);
         }
 
@@ -1434,13 +1579,14 @@ export default function AttendancePlatform() {
         .badge-amber { background: rgba(245,158,11,0.12); color: #fbbf24; }
         .badge-red { background: rgba(239,68,68,0.12); color: #f87171; }
         .badge-purple { background: rgba(168,85,247,0.12); color: #c084fc; }
+        .badge-blue { background: rgba(99,132,255,0.12); color: #818cf8; }
 
         .input-field {
-          background: rgba(10,14,23,0.6);
-          border: 1px solid rgba(99,132,255,0.12);
+          background: var(--color-input-bg);
+          border: 1px solid var(--color-border);
           border-radius: 10px;
           padding: 10px 14px;
-          color: #e2e8f0;
+          color: var(--color-text);
           font-size: 13px;
           font-family: inherit;
           outline: none;
@@ -1455,6 +1601,9 @@ export default function AttendancePlatform() {
           background-position: right 12px center;
           padding-right: 32px;
         }
+        html[data-theme="light"] select.input-field {
+          background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%235e6b85' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+        }
 
         .btn-primary {
           display: inline-flex; align-items: center; gap: 8px;
@@ -1463,7 +1612,7 @@ export default function AttendancePlatform() {
           font-size: 13px; font-weight: 600;
           font-family: inherit;
           background: linear-gradient(135deg, #6384ff, #5a6fff);
-          color: #fff;
+          color: var(--color-text-on-primary);
           transition: all 0.2s;
           box-shadow: 0 2px 12px rgba(99,132,255,0.25);
         }
@@ -1472,13 +1621,13 @@ export default function AttendancePlatform() {
         .btn-ghost {
           display: inline-flex; align-items: center; gap: 6px;
           padding: 8px 16px; border-radius: 10px;
-          border: 1px solid rgba(99,132,255,0.15); cursor: pointer;
+          border: 1px solid var(--color-border); cursor: pointer;
           font-size: 12px; font-weight: 500;
           font-family: inherit;
-          background: transparent; color: #8892a8;
+          background: transparent; color: var(--color-text-muted);
           transition: all 0.2s;
         }
-        .btn-ghost:hover { border-color: rgba(99,132,255,0.3); color: #c5cde0; background: rgba(99,132,255,0.05); }
+        .btn-ghost:hover { border-color: var(--color-border-strong); color: var(--color-text-soft); background: rgba(99,132,255,0.05); }
 
         .table-container { overflow-x: auto; }
         table {
@@ -1489,27 +1638,27 @@ export default function AttendancePlatform() {
           text-align: left; padding: 12px 16px;
           font-size: 11px; font-weight: 600;
           text-transform: uppercase; letter-spacing: 0.8px;
-          color: #5a6580; border-bottom: 1px solid rgba(99,132,255,0.08);
+          color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);
           position: sticky; top: 0;
-          background: rgba(15,20,35,0.98);
+          background: var(--color-table-head-bg);
         }
         td {
-          padding: 12px 16px; border-bottom: 1px solid rgba(99,132,255,0.04);
+          padding: 12px 16px; border-bottom: 1px solid var(--color-table-cell-border);
           font-family: 'JetBrains Mono', monospace; font-size: 12px;
-          color: #b0b8cc;
+          color: var(--color-text-soft);
         }
-        tr:hover td { background: rgba(99,132,255,0.03); }
+        tr:hover td { background: var(--color-table-row-hover); }
 
         .modal-overlay {
           position: fixed; inset: 0; z-index: 100;
-          background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+          background: var(--color-modal-overlay); backdrop-filter: blur(8px);
           display: flex; align-items: flex-start; justify-content: center;
           overflow-y: auto; padding: 24px 0;
           animation: fadeIn 0.2s ease;
         }
         .modal-content {
-          background: linear-gradient(145deg, #141b2d, #0f1423);
-          border: 1px solid rgba(99,132,255,0.12);
+          background: var(--color-modal-bg);
+          border: 1px solid var(--color-border);
           border-radius: 20px; padding: 32px;
           max-width: 520px; width: 90%;
           max-height: calc(100vh - 48px); overflow-y: auto;
@@ -1557,10 +1706,10 @@ export default function AttendancePlatform() {
         .chat-panel {
           position: fixed; bottom: 92px; right: 28px; z-index: 200;
           width: 380px; height: 560px;
-          background: linear-gradient(145deg, #141b2d, #0f1423);
-          border: 1px solid rgba(99,132,255,0.15);
+          background: var(--color-modal-bg);
+          border: 1px solid var(--color-border);
           border-radius: 20px;
-          box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+          box-shadow: 0 24px 80px rgba(0,0,0,0.35);
           display: flex; flex-direction: column;
           animation: slideUp 0.25s ease;
           overflow: hidden;
@@ -1569,35 +1718,39 @@ export default function AttendancePlatform() {
         .chat-msg-user {
           align-self: flex-end;
           background: linear-gradient(135deg, #6384ff, #5a6fff);
-          color: #fff;
+          color: var(--color-text-on-primary);
           padding: 10px 14px; border-radius: 16px 16px 4px 16px;
           max-width: 80%; font-size: 13px; line-height: 1.5;
           word-break: break-word;
         }
         .chat-msg-model {
           align-self: flex-start;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(99,132,255,0.1);
-          color: #c5cde0;
+          background: var(--color-chat-bubble-model-bg);
+          border: 1px solid var(--color-chat-bubble-model-border);
+          color: var(--color-text-soft);
           padding: 10px 14px; border-radius: 16px 16px 16px 4px;
           max-width: 88%; font-size: 13px; line-height: 1.6;
           word-break: break-word;
         }
         .chat-input-row {
           display: flex; gap: 8px; padding: 12px 16px;
-          border-top: 1px solid rgba(99,132,255,0.08);
-          background: rgba(10,14,23,0.6);
+          border-top: 1px solid var(--color-border);
+          background: var(--color-input-bg);
         }
         .chat-input {
           flex: 1;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(99,132,255,0.15);
+          background: var(--color-input-bg);
+          border: 1px solid var(--color-border-strong);
           border-radius: 10px; padding: 9px 13px;
-          color: #e2e8f0; font-size: 13px; font-family: inherit;
+          color: var(--color-text); font-size: 13px; font-family: inherit;
           outline: none; resize: none;
           transition: border-color 0.2s;
         }
-        .chat-input:focus { border-color: rgba(99,132,255,0.4); }
+        .chat-input::placeholder {
+          color: var(--color-text-muted);
+          opacity: 1;
+        }
+        .chat-input:focus { border-color: rgba(99,132,255,0.45); }
         .chat-send-btn {
           width: 38px; height: 38px; border-radius: 10px;
           background: linear-gradient(135deg, #6384ff, #5a6fff);
@@ -1625,9 +1778,9 @@ export default function AttendancePlatform() {
       {/* --- HEADER --- */}
       <header style={{
         padding: "16px 32px",
-        borderBottom: "1px solid rgba(99,132,255,0.06)",
+        borderBottom: "1px solid var(--color-border)",
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        background: "rgba(10,14,23,0.8)", backdropFilter: "blur(20px)",
+        background: "var(--color-header-bg)", backdropFilter: "blur(20px)",
         position: "sticky", top: 0, zIndex: 50,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1635,20 +1788,23 @@ export default function AttendancePlatform() {
             width: 36, height: 36, borderRadius: 10,
             background: "linear-gradient(135deg, #6384ff, #5a6fff)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, fontWeight: 700, color: "#fff",
+            fontSize: 16, fontWeight: 700, color: "var(--color-text)",
             boxShadow: "0 2px 12px rgba(99,132,255,0.3)",
           }}>A</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", letterSpacing: "-0.3px" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text)", letterSpacing: "-0.3px" }}>
               ControlAsistencias
             </div>
-            <div style={{ fontSize: 11, color: "#5a6580", fontFamily: "'JetBrains Mono', monospace" }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontFamily: "'JetBrains Mono', monospace" }}>
               Sistema de Control de Asistencia
             </div>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="btn-ghost" onClick={toggleTheme} aria-label="Cambiar tema">
+            {theme === "dark" ? "Modo light" : "Modo dark"}
+          </button>
           <button className="btn-ghost" onClick={() => setShowUpload(true)}>
             <Icons.Upload /> Subir Archivo
           </button>
@@ -1663,7 +1819,7 @@ export default function AttendancePlatform() {
                 width: 34, height: 34, borderRadius: 10,
                 background: "linear-gradient(135deg, #f59e0b, #ef4444)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 13, fontWeight: 700, color: "#fff",
+                fontSize: 13, fontWeight: 700, color: "var(--color-text)",
                 border: "none", cursor: "pointer",
               }}
             >
@@ -1677,8 +1833,8 @@ export default function AttendancePlatform() {
                   top: "calc(100% + 8px)",
                   right: 0,
                   minWidth: 220,
-                  background: "rgba(10,14,23,0.98)",
-                  border: "1px solid rgba(99,132,255,0.2)",
+                  background: "var(--color-menu-bg)",
+                  border: "1px solid var(--color-border-strong)",
                   borderRadius: 12,
                   boxShadow: "0 10px 26px rgba(0,0,0,0.4)",
                   padding: 8,
@@ -1686,9 +1842,9 @@ export default function AttendancePlatform() {
               >
                 <div style={{
                   fontSize: 11,
-                  color: "#8fa0c5",
+                  color: "var(--color-text-muted)",
                   padding: "8px 10px",
-                  borderBottom: "1px solid rgba(99,132,255,0.15)",
+                  borderBottom: "1px solid var(--color-border)",
                   marginBottom: 6,
                 }}>
                   {user?.email} ({user?.role})
@@ -1727,17 +1883,18 @@ export default function AttendancePlatform() {
         {/* --- SIDEBAR --- */}
         <nav style={{
           width: 220, padding: "20px 12px",
-          borderRight: "1px solid rgba(99,132,255,0.06)",
-          background: "rgba(10,14,23,0.4)",
+          borderRight: "1px solid var(--color-border)",
+          background: "var(--color-sidebar-bg)",
           display: "flex", flexDirection: "column", gap: 4,
         }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "#3d4f6f", textTransform: "uppercase", letterSpacing: "1.2px", padding: "8px 16px 12px" }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1.2px", padding: "8px 16px 12px" }}>
             Navegación
           </div>
           {[
             { id: "dashboard", icon: <Icons.Chart />, label: "Dashboard" },
             { id: "daily", icon: <Icons.Calendar />, label: "Reporte Diario" },
             { id: "employees", icon: <Icons.Users />, label: "Por Empleado" },
+            { id: "lateAccumulation", icon: <Icons.Clock />, label: "Retardos Acumulados" },
             { id: "incidents", icon: <Icons.Alert />, label: "Incidencias" },
             { id: "absences", icon: <Icons.UserX />, label: "Inasistencias" },
           ].map(item => (
@@ -1751,13 +1908,13 @@ export default function AttendancePlatform() {
           ))}
 
           <div style={{ marginTop: "auto", padding: "16px", borderTop: "1px solid rgba(99,132,255,0.06)" }}>
-            <div style={{ fontSize: 11, color: "#3d4f6f", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
               <Icons.Database /> Fuente: XLSX
             </div>
-            <div style={{ fontSize: 12, color: "#5a6580", fontFamily: "'JetBrains Mono', monospace" }}>
+            <div style={{ fontSize: 12, color: "var(--color-text-muted)", fontFamily: "'JetBrains Mono', monospace" }}>
               {records.length.toLocaleString("es-MX")} registros
             </div>
-            <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 2 }}>
               {employees.length} empleados • {monthOptions.length} meses
             </div>
           </div>
@@ -1769,10 +1926,10 @@ export default function AttendancePlatform() {
           {/* Empty state */}
           {records.length === 0 && (
             <div className="glass-panel" style={{ padding: 28, marginBottom: 24, border: "1px solid rgba(99,132,255,0.15)" }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", marginBottom: 8 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text)", marginBottom: 8 }}>
                 Sin datos cargados
               </div>
-              <div style={{ fontSize: 13, color: "#8892a8", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginBottom: 16 }}>
                 Sube un archivo .xlsx de Odoo (hr.attendance) para calcular indicadores en tiempo real.
               </div>
               <button className="btn-primary" onClick={() => setShowUpload(true)}>
@@ -1785,7 +1942,7 @@ export default function AttendancePlatform() {
           <div style={{
             display: "flex", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap",
           }}>
-            <div style={{ display: "flex", gap: 4, background: "rgba(20,27,45,0.6)", borderRadius: 12, padding: 4, border: "1px solid rgba(99,132,255,0.08)" }}>
+            <div style={{ display: "flex", gap: 4, background: "var(--color-pill-track)", borderRadius: 12, padding: 4, border: "1px solid var(--color-pill-border)" }}>
               {[
                 { id: "day", label: "Día" },
                 { id: "week", label: "Semana" },
@@ -1794,8 +1951,8 @@ export default function AttendancePlatform() {
                 <button key={p.id} onClick={() => setReportPeriod(p.id)} style={{
                   padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer",
                   fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-                  background: reportPeriod === p.id ? "rgba(99,132,255,0.15)" : "transparent",
-                  color: reportPeriod === p.id ? "#fff" : "#5a6580",
+                  background: reportPeriod === p.id ? "var(--color-pill-active-bg)" : "transparent",
+                  color: reportPeriod === p.id ? "var(--color-text)" : "var(--color-text-muted)",
                   transition: "all 0.2s",
                 }}>
                   {p.label}
@@ -1878,7 +2035,7 @@ export default function AttendancePlatform() {
                     <span style={{ fontSize: 12, color: "#818cf8", fontWeight: 600 }}>{periodLabel}</span>
                   </div>
                   {periodDateRange && (
-                    <div style={{ fontSize: 11, color: "#5a6580" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
                       Datos hasta hoy • Rango efectivo: {formatDate(periodDateRange.start)} - {formatDate(periodDateRange.end)}
                     </div>
                   )}
@@ -1887,47 +2044,47 @@ export default function AttendancePlatform() {
               {/* Stats Cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
                 <div className="glass-panel stat-card green" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     A Tiempo <HelpTip text={widgetHelp.onTime} />
                   </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono', monospace" }}>{stats.onTime}</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                     {stats.totalRecords > 0 ? Math.round(stats.onTime / stats.totalRecords * 100) : 0}% de registros
                   </div>
                 </div>
                 <div className="glass-panel stat-card amber" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     Retardos <HelpTip text={widgetHelp.late} />
                   </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#fbbf24", fontFamily: "'JetBrains Mono', monospace" }}>{stats.late}</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                     {stats.totalRecords > 0 ? Math.round(stats.late / stats.totalRecords * 100) : 0}% de registros
                   </div>
                 </div>
                 <div className="glass-panel stat-card red" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     Retardo Mayor <HelpTip text={widgetHelp.veryLate} />
                   </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#f87171", fontFamily: "'JetBrains Mono', monospace" }}>{stats.veryLate}</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                     {">"}{config.lateThresholdMinutes} min después
                   </div>
                 </div>
                 <div className="glass-panel stat-card blue" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     Hrs. Promedio <HelpTip text={widgetHelp.avgHours} />
                   </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#818cf8", fontFamily: "'JetBrains Mono', monospace" }}>{stats.avgHours.toFixed(1)}</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                     hrs/día por persona
                   </div>
                 </div>
                 <div className="glass-panel stat-card purple" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     Inasistencias <HelpTip text={widgetHelp.absences} />
                   </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{stats.absences}</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                     {stats.absenceRatePct.toFixed(1)}% sobre {stats.absenceBaseEmployees} empleados activos
                   </div>
                 </div>
@@ -1937,7 +2094,7 @@ export default function AttendancePlatform() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 28 }}>
                 {/* Bar Chart - Attendance by day of week */}
                 <div className="glass-panel" style={{ padding: 24 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
                     Asistencia por día de la semana <HelpTip text={widgetHelp.weekday} />
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 160, paddingBottom: 24, position: "relative" }}>
@@ -1950,7 +2107,7 @@ export default function AttendancePlatform() {
                           width: "100%", height: `${Math.max(day.pct, 4)}%`,
                           background: `linear-gradient(180deg, rgba(99,132,255,${0.6 + i * 0.08}), rgba(99,132,255,0.15))`,
                         }} />
-                        <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 500 }}>{day.label}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 500 }}>{day.label}</div>
                       </div>
                     ))}
                   </div>
@@ -1958,7 +2115,7 @@ export default function AttendancePlatform() {
 
                 {/* Donut-like summary */}
                 <div className="glass-panel" style={{ padding: 24 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
                     Distribución de Incidencias <HelpTip text={widgetHelp.incidents} />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
@@ -1978,10 +2135,10 @@ export default function AttendancePlatform() {
                           strokeLinecap="round" />
                       </svg>
                       <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-                        <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", fontFamily: "'JetBrains Mono', monospace" }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text)", fontFamily: "'JetBrains Mono', monospace" }}>
                           {reportPeriod === "day" ? stats.uniqueEmployees : stats.totalRecords}
                         </div>
-                        <div style={{ fontSize: 10, color: "#5a6580" }}>
+                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
                           {reportPeriod === "day" ? "personas con asistencia" : "registros"}
                         </div>
                       </div>
@@ -1994,11 +2151,11 @@ export default function AttendancePlatform() {
                       ].map(item => (
                         <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{ width: 10, height: 10, borderRadius: 3, background: item.color }} />
-                          <span style={{ fontSize: 12, color: "#8892a8", minWidth: 90 }}>{item.label}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
+                          <span style={{ fontSize: 12, color: "var(--color-text-muted)", minWidth: 90 }}>{item.label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text)", fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
                         </div>
                       ))}
-                      <div style={{ fontSize: 11, color: "#5a6580", marginTop: 4 }}>
+                      <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
                         {stats.totalRecords} registros · {stats.uniqueEmployees} personas con asistencia
                       </div>
                     </div>
@@ -2009,7 +2166,7 @@ export default function AttendancePlatform() {
               {/* Top Incidents Table */}
               <div className="glass-panel" style={{ padding: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", display: "flex", alignItems: "center", gap: 8 }}>
                     Resumen por Empleado <HelpTip text={widgetHelp.employeeSummary} />
                   </div>
                   <button className="btn-ghost" onClick={exportDashboard} disabled={employeeReport.length === 0}><Icons.Download /> Exportar</button>
@@ -2022,10 +2179,10 @@ export default function AttendancePlatform() {
                     placeholder="Buscar empleado..."
                     aria-label="Buscar en resumen por empleado"
                     style={{
-                      background: "rgba(10,14,23,0.8)",
+                      background: "var(--color-input-bg)",
                       border: "1px solid rgba(99,132,255,0.16)",
                       borderRadius: 10,
-                      color: "#e2e8f0",
+                      color: "var(--color-text)",
                       padding: "10px 12px",
                       fontSize: 12,
                     }}
@@ -2035,10 +2192,10 @@ export default function AttendancePlatform() {
                     onChange={(e) => setEmployeeTableFilter(e.target.value as EmployeeTableFilter)}
                     aria-label="Filtro rápido de empleados"
                     style={{
-                      background: "rgba(10,14,23,0.8)",
+                      background: "var(--color-input-bg)",
                       border: "1px solid rgba(99,132,255,0.16)",
                       borderRadius: 10,
-                      color: "#e2e8f0",
+                      color: "var(--color-text)",
                       padding: "10px 12px",
                       fontSize: 12,
                     }}
@@ -2049,7 +2206,7 @@ export default function AttendancePlatform() {
                     <option value="withIncidents">Con incidencias</option>
                   </select>
                 </div>
-                <div style={{ fontSize: 11, color: "#5a6580", marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 12 }}>
                   {filteredEmployeeReport.length} empleados filtrados ({employeeReport.length} totales)
                 </div>
                 <div className="table-container" style={{ maxHeight: 400, overflowY: "auto" }}>
@@ -2072,7 +2229,7 @@ export default function AttendancePlatform() {
                         const pct = emp.days > 0 ? Math.round(emp.onTime / emp.days * 100) : 0;
                         return (
                           <tr key={emp.name}>
-                            <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{emp.name}</td>
+                            <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{emp.name}</td>
                             <td>{emp.days}</td>
                             <td><span className="badge badge-green">{emp.onTime}</span></td>
                             <td><span className="badge badge-amber">{emp.late}</span></td>
@@ -2096,7 +2253,7 @@ export default function AttendancePlatform() {
                       })}
                       {filteredEmployeeReport.length === 0 && (
                         <tr>
-                          <td colSpan={9} style={{ color: "#5a6580", textAlign: "center", padding: 20 }}>
+                          <td colSpan={9} style={{ color: "var(--color-text-muted)", textAlign: "center", padding: 20 }}>
                             Sin resultados para los filtros seleccionados.
                           </td>
                         </tr>
@@ -2120,8 +2277,8 @@ export default function AttendancePlatform() {
             <div className="glass-panel" style={{ padding: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Reporte Detallado de Asistencia</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>Reporte Detallado de Asistencia</div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                     {filteredData.length} registros · {stats.uniqueEmployees} personas con asistencia · {periodLabel}
                   </div>
                 </div>
@@ -2146,7 +2303,7 @@ export default function AttendancePlatform() {
                       const diffMins = timeToMinutes(r.entry) - timeToMinutes(config.entryTime);
                       return (
                         <tr key={r.id}>
-                          <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{r.employee}</td>
+                          <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{r.employee}</td>
                           <td>{formatDate(r.date)}</td>
                           <td>{r.entry}</td>
                           <td>{r.exit || "--:--"}</td>
@@ -2180,8 +2337,8 @@ export default function AttendancePlatform() {
             <>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Por Empleado</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>{filteredEmployeeReport.length} empleados filtrados ({employeeReport.length} totales) · {periodLabel}</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>Por Empleado</div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>{filteredEmployeeReport.length} empleados filtrados ({employeeReport.length} totales) · {periodLabel}</div>
                 </div>
                 <button className="btn-ghost" onClick={exportEmployees} disabled={employeeReport.length === 0}><Icons.Download /> Exportar</button>
               </div>
@@ -2193,10 +2350,10 @@ export default function AttendancePlatform() {
                 placeholder="Buscar empleado..."
                 aria-label="Buscar en cards por empleado"
                 style={{
-                  background: "rgba(10,14,23,0.8)",
+                  background: "var(--color-input-bg)",
                   border: "1px solid rgba(99,132,255,0.16)",
                   borderRadius: 10,
-                  color: "#e2e8f0",
+                  color: "var(--color-text)",
                   padding: "10px 12px",
                   fontSize: 12,
                 }}
@@ -2206,10 +2363,10 @@ export default function AttendancePlatform() {
                 onChange={(e) => setEmployeeTableFilter(e.target.value as EmployeeTableFilter)}
                 aria-label="Filtro rápido de cards de empleado"
                 style={{
-                  background: "rgba(10,14,23,0.8)",
+                  background: "var(--color-input-bg)",
                   border: "1px solid rgba(99,132,255,0.16)",
                   borderRadius: 10,
-                  color: "#e2e8f0",
+                  color: "var(--color-text)",
                   padding: "10px 12px",
                   fontSize: 12,
                 }}
@@ -2227,8 +2384,8 @@ export default function AttendancePlatform() {
                   <div key={emp.name} className="glass-panel" style={{ padding: 20 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                       <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{emp.name}</div>
-                        <div style={{ fontSize: 11, color: "#5a6580", marginTop: 2 }}>{emp.days} días registrados</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)" }}>{emp.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 2 }}>{emp.days} días registrados</div>
                       </div>
                       <div style={{
                         fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
@@ -2238,19 +2395,19 @@ export default function AttendancePlatform() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
                       <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(16,185,129,0.06)" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono', monospace" }}>{emp.onTime}</div>
-                        <div style={{ fontSize: 10, color: "#5a6580" }}>A Tiempo</div>
+                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>A Tiempo</div>
                       </div>
                       <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(245,158,11,0.06)" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, color: "#fbbf24", fontFamily: "'JetBrains Mono', monospace" }}>{emp.late}</div>
-                        <div style={{ fontSize: 10, color: "#5a6580" }}>Retardos</div>
+                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Retardos</div>
                       </div>
                       <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(239,68,68,0.06)" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, color: "#f87171", fontFamily: "'JetBrains Mono', monospace" }}>{emp.veryLate}</div>
-                        <div style={{ fontSize: 10, color: "#5a6580" }}>Ret. Mayor</div>
+                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Ret. Mayor</div>
                       </div>
                       <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(168,85,247,0.06)" }}>
                         <div style={{ fontSize: 18, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{emp.absences}</div>
-                        <div style={{ fontSize: 10, color: "#5a6580" }}>Faltas</div>
+                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Faltas</div>
                       </div>
                     </div>
                     <div style={{ height: 4, borderRadius: 4, background: "rgba(99,132,255,0.08)" }}>
@@ -2260,7 +2417,7 @@ export default function AttendancePlatform() {
                         transition: "width 0.5s ease",
                       }} />
                     </div>
-                    <div style={{ fontSize: 11, color: "#5a6580", marginTop: 8, display: "flex", justifyContent: "space-between" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 8, display: "flex", justifyContent: "space-between" }}>
                       <span>Hrs. total: {emp.totalHours.toFixed(1)}</span>
                       <span>Prom: {(emp.totalHours / Math.max(emp.days, 1)).toFixed(1)} hrs/día</span>
                     </div>
@@ -2268,7 +2425,7 @@ export default function AttendancePlatform() {
                 );
               })}
               {filteredEmployeeReport.length === 0 && (
-                <div className="glass-panel" style={{ padding: 20, color: "#5a6580", fontSize: 12 }}>
+                <div className="glass-panel" style={{ padding: 20, color: "var(--color-text-muted)", fontSize: 12 }}>
                   Sin resultados para los filtros seleccionados.
                 </div>
               )}
@@ -2284,15 +2441,150 @@ export default function AttendancePlatform() {
           )}
 
           {/* INCIDENTS VIEW */}
+          {activeTab === "lateAccumulation" && (
+            <div className="glass-panel" style={{ padding: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>
+                    Acumulacion de Retardos por Empleado
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
+                    Periodo mensual: {selectedMonth || "sin mes"} • Regla activa: {laborRules.directLateAfterTolerance ? "Retardo + Retardo Mayor computan" : "Solo Retardo Mayor computa"}
+                  </div>
+                </div>
+                <button className="btn-ghost" onClick={exportLateAccumulation} disabled={filteredLateAccumulationReport.length === 0}>
+                  <Icons.Download /> Exportar
+                </button>
+              </div>
+              {lateAccumulationRange && (
+                <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 8 }}>
+                  Rango efectivo: {formatDate(lateAccumulationRange.start)} - {formatDate(lateAccumulationRange.end)} (cortado a hoy)
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 16 }}>
+                Umbral formal: desde retardo #{laborRules.lateFormalFromNthInMonth} •
+                Acta cada {laborRules.formalLateActaAtNth} acumulados •
+                Riesgo anual: {laborRules.actasForTerminationInYear} actas
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) auto", gap: 10, marginBottom: 12 }}>
+                <input
+                  type="text"
+                  value={lateAccumSearch}
+                  onChange={(e) => setLateAccumSearch(e.target.value)}
+                  placeholder="Buscar empleado..."
+                  aria-label="Buscar en acumulacion de retardos"
+                  style={{
+                    background: "var(--color-input-bg)",
+                    border: "1px solid rgba(99,132,255,0.16)",
+                    borderRadius: 10,
+                    color: "var(--color-text)",
+                    padding: "10px 12px",
+                    fontSize: 12,
+                  }}
+                />
+                <select
+                  value={lateAccumFilter}
+                  onChange={(e) => setLateAccumFilter(e.target.value as LateAccumulationFilter)}
+                  aria-label="Filtro de acumulacion de retardos"
+                  style={{
+                    background: "var(--color-input-bg)",
+                    border: "1px solid rgba(99,132,255,0.16)",
+                    borderRadius: 10,
+                    color: "var(--color-text)",
+                    padding: "10px 12px",
+                    fontSize: 12,
+                  }}
+                >
+                  <option value="all">Todos</option>
+                  <option value="withFormalization">Con retardo formal</option>
+                  <option value="withActa">Con acta</option>
+                  <option value="withEquivalentAbsence">Con falta equivalente</option>
+                </select>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 12 }}>
+                {filteredLateAccumulationReport.length} empleados filtrados ({lateAccumulationReport.length} totales)
+              </div>
+              <div className="table-container" style={{ maxHeight: 520, overflowY: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Empleado</th>
+                      <th>Retardos</th>
+                      <th>Ret. Mayor</th>
+                      <th>Total computable</th>
+                      <th>Formalizacion</th>
+                      <th>Actas</th>
+                      <th>Faltas equivalentes</th>
+                      <th>Progreso</th>
+                      <th>Siguiente acta</th>
+                      <th>Estado / Sancion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedLateAccumulation.map((row) => (
+                      <tr key={row.name}>
+                        <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{row.name}</td>
+                        <td><span className="badge badge-amber">{row.late}</span></td>
+                        <td><span className="badge badge-red">{row.veryLate}</span></td>
+                        <td><span className="badge badge-blue">{row.totalComputable}</span></td>
+                        <td>
+                          <span className={`badge ${row.formalized ? "badge-amber" : "badge-green"}`}>
+                            {row.formalized ? "Si" : "No"}
+                          </span>
+                        </td>
+                        <td><span className={`badge ${row.actas > 0 ? "badge-red" : "badge-green"}`}>{row.actas}</span></td>
+                        <td><span className={`badge ${row.equivalentAbsences > 0 ? "badge-purple" : "badge-green"}`}>{row.equivalentAbsences}</span></td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ flex: 1, height: 4, borderRadius: 4, background: "rgba(99,132,255,0.08)", minWidth: 70 }}>
+                              <div
+                                style={{
+                                  height: "100%",
+                                  borderRadius: 4,
+                                  width: `${row.progressPct}%`,
+                                  background: row.equivalentAbsences > 0 ? "linear-gradient(90deg, #a855f7, #c084fc)" : "linear-gradient(90deg, #f59e0b, #fbbf24)",
+                                }}
+                              />
+                            </div>
+                            <span style={{ fontSize: 11, minWidth: 34 }}>{row.progressPct}%</span>
+                          </div>
+                        </td>
+                        <td style={{ color: "var(--color-text-muted)" }}>
+                          {row.nextActaIn} retardo(s)
+                        </td>
+                        <td style={{ color: "var(--color-text-soft)", fontSize: 12 }}>{row.sanctionLabel}</td>
+                      </tr>
+                    ))}
+                    {filteredLateAccumulationReport.length === 0 && (
+                      <tr>
+                        <td colSpan={10} style={{ color: "var(--color-text-muted)", textAlign: "center", padding: 20 }}>
+                          Sin resultados para los filtros seleccionados.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <PaginationControls
+                page={lateAccumPage}
+                totalItems={filteredLateAccumulationReport.length}
+                pageSize={PAGE_SIZE_LATE_ACCUMULATION}
+                onPageChange={setLateAccumPage}
+                itemLabel="empleados"
+              />
+            </div>
+          )}
+
+          {/* INCIDENTS VIEW */}
           {activeTab === "incidents" && (
             <div className="glass-panel" style={{ padding: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>
                   Registro de Incidencias
                 </div>
                 <button className="btn-ghost" onClick={exportIncidents} disabled={incidentsData.length === 0}><Icons.Download /> Exportar</button>
               </div>
-              <div style={{ fontSize: 12, color: "#5a6580", marginBottom: 20 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 20 }}>
                 Solo retardos y retardos mayores • Configuración: Entrada {config.entryTime}, Tolerancia {config.toleranceMinutes} min, Retardo mayor {">"}{config.lateThresholdMinutes} min
               </div>
               <div className="table-container" style={{ maxHeight: 500, overflowY: "auto" }}>
@@ -2312,7 +2604,7 @@ export default function AttendancePlatform() {
                         const diffMins = timeToMinutes(r.entry) - timeToMinutes(config.entryTime);
                         return (
                           <tr key={r.id}>
-                            <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{r.employee}</td>
+                            <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{r.employee}</td>
                             <td>{formatDate(r.date)}</td>
                             <td>{r.entry}</td>
                             <td>
@@ -2343,25 +2635,25 @@ export default function AttendancePlatform() {
               {/* Summary cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
                 <div className="glass-panel stat-card purple" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Total Inasistencias</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Total Inasistencias</div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{absenceData.length}</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                     {stats.absenceRatePct.toFixed(1)}% de ausentismo · {periodLabel}
                   </div>
                 </div>
                 <div className="glass-panel stat-card blue" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Días Hábiles del Período</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Días Hábiles del Período</div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#818cf8", fontFamily: "'JetBrains Mono', monospace" }}>
                     {stats.workingDays}
                   </div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>Lunes a Viernes</div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>Lunes a Viernes</div>
                 </div>
                 <div className="glass-panel stat-card red" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Empleados con Faltas</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Empleados con Faltas</div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#f87171", fontFamily: "'JetBrains Mono', monospace" }}>
                     {new Set(absenceData.map((a) => a.employee)).size}
                   </div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>con al menos 1 inasistencia</div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>con al menos 1 inasistencia</div>
                 </div>
               </div>
 
@@ -2369,8 +2661,8 @@ export default function AttendancePlatform() {
               <div className="glass-panel" style={{ padding: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                   <div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Detalle de Inasistencias</div>
-                    <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>Detalle de Inasistencias</div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
                       Días hábiles (Lun–Vie) sin ningún registro de entrada · Horario: {config.entryTime} – {config.exitTime}
                     </div>
                   </div>
@@ -2380,7 +2672,7 @@ export default function AttendancePlatform() {
                 </div>
 
                 {absenceData.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 0", color: "#5a6580", fontSize: 14 }}>
+                  <div style={{ textAlign: "center", padding: "40px 0", color: "var(--color-text-muted)", fontSize: 14 }}>
                     {records.length === 0
                       ? "Sin datos cargados — sube un archivo para calcular inasistencias."
                       : "No se detectaron inasistencias en el período seleccionado. ¡Asistencia perfecta!"}
@@ -2402,9 +2694,9 @@ export default function AttendancePlatform() {
                           const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
                           return (
                             <tr key={i}>
-                              <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{a.employee}</td>
+                              <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{a.employee}</td>
                               <td>{formatDate(a.date)}</td>
-                              <td style={{ color: "#8892a8" }}>{dayNames[d.getDay()]}</td>
+                              <td style={{ color: "var(--color-text-muted)" }}>{dayNames[d.getDay()]}</td>
                               <td><span className="badge badge-purple">✕ Inasistencia</span></td>
                             </tr>
                           );
@@ -2427,7 +2719,7 @@ export default function AttendancePlatform() {
               {/* Per-employee absence summary */}
               {absenceData.length > 0 && (
                 <div className="glass-panel" style={{ padding: 24, marginTop: 16 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 16 }}>Resumen por Empleado</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", marginBottom: 16 }}>Resumen por Empleado</div>
                   <div className="table-container" style={{ maxHeight: 360, overflowY: "auto" }}>
                     <table>
                       <thead>
@@ -2449,9 +2741,9 @@ export default function AttendancePlatform() {
                               const pct = totalWD > 0 ? Math.round((count / totalWD) * 100) : 0;
                               return (
                                 <tr key={emp}>
-                                  <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{emp}</td>
+                                  <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{emp}</td>
                                   <td><span className="badge badge-purple">{count}</span></td>
-                                  <td style={{ color: "#8892a8" }}>{totalWD}</td>
+                                  <td style={{ color: "var(--color-text-muted)" }}>{totalWD}</td>
                                   <td>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                       <div style={{ flex: 1, height: 4, borderRadius: 4, background: "rgba(99,132,255,0.08)", minWidth: 60 }}>
@@ -2480,25 +2772,25 @@ export default function AttendancePlatform() {
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
                 <div className="glass-panel" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px" }}>Registros Cargados</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px" }}>Registros Cargados</div>
                   <div style={{ fontSize: 28, fontWeight: 700, color: "#818cf8", fontFamily: "'JetBrains Mono', monospace", marginTop: 8 }}>
                     {records.length.toLocaleString("es-MX")}
                   </div>
                 </div>
                 <div className="glass-panel" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px" }}>Empleados Detectados</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px" }}>Empleados Detectados</div>
                   <div style={{ fontSize: 28, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono', monospace", marginTop: 8 }}>{employees.length}</div>
                 </div>
                 <div className="glass-panel" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px" }}>Última Fecha en Datos</div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0", fontFamily: "'JetBrains Mono', monospace", marginTop: 12 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px" }}>Última Fecha en Datos</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)", fontFamily: "'JetBrains Mono', monospace", marginTop: 12 }}>
                     {latestDate ? formatDate(latestDate) : "--"}
                   </div>
                 </div>
               </div>
 
               <div className="glass-panel" style={{ padding: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 16 }}>Historial de Importaciones</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", marginBottom: 16 }}>Historial de Importaciones</div>
                 <table>
                   <thead>
                     <tr>
@@ -2512,7 +2804,7 @@ export default function AttendancePlatform() {
                   <tbody>
                     {uploadSummary ? (
                       <tr>
-                        <td style={{ color: "#e2e8f0", fontFamily: "'DM Sans', sans-serif" }}>{uploadSummary.fileName}</td>
+                        <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif" }}>{uploadSummary.fileName}</td>
                         <td>{uploadSummary.uploadedAt}</td>
                         <td><span className="badge badge-green">{uploadSummary.validRows}</span></td>
                         <td><span className="badge badge-amber">{uploadSummary.duplicates}</span></td>
@@ -2520,7 +2812,7 @@ export default function AttendancePlatform() {
                       </tr>
                     ) : (
                       <tr>
-                        <td colSpan={5} style={{ color: "#5a6580", textAlign: "center", padding: 24 }}>
+                        <td colSpan={5} style={{ color: "var(--color-text-muted)", textAlign: "center", padding: 24 }}>
                           Sin importaciones — sube un archivo para comenzar
                         </td>
                       </tr>
@@ -2531,7 +2823,7 @@ export default function AttendancePlatform() {
                 <div style={{ marginTop: 24, padding: 16, borderRadius: 12, background: "rgba(99,132,255,0.04)", border: "1px solid rgba(99,132,255,0.08)" }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "#818cf8", marginBottom: 8 }}>Columnas esperadas (Odoo hr.attendance)</div>
                   <pre style={{
-                    fontSize: 11, color: "#8892a8", fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 11, color: "var(--color-text-muted)", fontFamily: "'JetBrains Mono', monospace",
                     lineHeight: 1.6, whiteSpace: "pre-wrap",
                   }}>{`Columna "Employee" o "Empleado"    → nombre del trabajador
 Columna "Check In" o "Entrada"     → fecha y hora de entrada
@@ -2556,8 +2848,8 @@ sin importar mayúsculas o tildes.`}</pre>
             style={{ width: "75vw", maxWidth: "1200px" }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>Configuración de Horarios</div>
-              <button onClick={() => setShowSettings(false)} style={{ background: "none", border: "none", color: "#5a6580", cursor: "pointer", padding: 4 }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--color-text)" }}>Configuración de Horarios</div>
+              <button onClick={() => setShowSettings(false)} style={{ background: "none", border: "none", color: "var(--color-text-muted)", cursor: "pointer", padding: 4 }}>
                 <Icons.X />
               </button>
             </div>
@@ -2566,26 +2858,26 @@ sin importar mayúsculas o tildes.`}</pre>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div>
-                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6, fontWeight: 500 }}>
                       <Icons.Clock /> Hora de Entrada Programada
                     </label>
                     <input type="time" className="input-field" value={config.entryTime}
                       onChange={e => setConfig({ ...config, entryTime: e.target.value })} />
                   </div>
                   <div>
-                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6, fontWeight: 500 }}>
                       <Icons.Clock /> Hora de Salida Programada
                     </label>
                     <input type="time" className="input-field" value={config.exitTime}
                       onChange={e => setConfig({ ...config, exitTime: e.target.value })} />
                   </div>
                   <div>
-                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6, fontWeight: 500 }}>
                       Minutos de Tolerancia (aún cuenta como "a tiempo")
                     </label>
                     <input type="number" className="input-field" value={config.toleranceMinutes}
                       onChange={e => setConfig({ ...config, toleranceMinutes: Number(e.target.value) })} />
-                    <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
                       Entrada hasta las {(() => {
                         const [h, m] = config.entryTime.split(":").map(Number);
                         const total = h * 60 + m + config.toleranceMinutes;
@@ -2594,17 +2886,17 @@ sin importar mayúsculas o tildes.`}</pre>
                     </div>
                   </div>
                   <div>
-                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6, fontWeight: 500 }}>
                       Umbral de Retardo Mayor (minutos después de la entrada)
                     </label>
                     <input type="number" className="input-field" value={config.lateThresholdMinutes}
                       onChange={e => setConfig({ ...config, lateThresholdMinutes: Number(e.target.value) })} />
-                    <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
                       Después de {config.lateThresholdMinutes} min se clasifica como retardo mayor
                     </div>
                   </div>
                   <div style={{ gridColumn: "1 / -1" }}>
-                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6, fontWeight: 500 }}>
                       Horas de Trabajo por Día (jornada estándar)
                     </label>
                     <input type="number" step="0.5" className="input-field" value={config.workingHoursPerDay}
@@ -2617,7 +2909,7 @@ sin importar mayúsculas o tildes.`}</pre>
                   background: "rgba(99,132,255,0.04)", border: "1px solid rgba(99,132,255,0.08)",
                 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "#818cf8", marginBottom: 8 }}>Resumen de Clasificación</div>
-                  <div style={{ fontSize: 12, color: "#8892a8", lineHeight: 1.8 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", lineHeight: 1.8 }}>
                     <span className="badge badge-green" style={{ marginRight: 8 }}>A Tiempo</span> Entrada ≤ {config.entryTime} + {config.toleranceMinutes} min<br />
                     <span className="badge badge-amber" style={{ marginRight: 8 }}>Retardo</span> Entrada entre +{config.toleranceMinutes} y +{config.lateThresholdMinutes} min<br />
                     <span className="badge badge-red" style={{ marginRight: 8 }}>Ret. Mayor</span> Entrada {">"} +{config.lateThresholdMinutes} min
@@ -2632,31 +2924,31 @@ sin importar mayúsculas o tildes.`}</pre>
               <div style={{ fontSize: 12, fontWeight: 600, color: "#818cf8", marginBottom: 12 }}>
                 Reglas Laborales (Reglamento)
               </div>
-              <div style={{ fontSize: 11, color: "#5a6580", marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 10 }}>
                 La tolerancia de llegada se toma desde “Configuración de Horarios” para evitar duplicidad.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ border: "1px solid rgba(99,132,255,0.08)", borderRadius: 10, padding: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "#cbd5e1", marginBottom: 8 }}>Reglas de retardos</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-soft)", marginBottom: 8 }}>Reglas de retardos</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>¿Desde qué llegada tarde cuenta retardo formal?</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>¿Desde qué llegada tarde cuenta retardo formal?</label>
                       <input type="number" className="input-field" value={laborRules.lateFormalFromNthInMonth}
                         onChange={e => setLaborRules({ ...laborRules, lateFormalFromNthInMonth: Number(e.target.value) })} />
-                      <div style={{ fontSize: 10, color: "#5a6580", marginTop: 3 }}>Ejemplo: 4 = la 4ta llegada tarde ya cuenta formal.</div>
+                      <div style={{ fontSize: 10, color: "var(--color-text-muted)", marginTop: 3 }}>Ejemplo: 4 = la 4ta llegada tarde ya cuenta formal.</div>
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>¿Desde qué número de retardos se levanta acta?</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>¿Desde qué número de retardos se levanta acta?</label>
                       <input type="number" className="input-field" value={laborRules.formalLateActaAtNth}
                         onChange={e => setLaborRules({ ...laborRules, formalLateActaAtNth: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>¿Cuántas actas en un año causan rescisión?</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>¿Cuántas actas en un año causan rescisión?</label>
                       <input type="number" className="input-field" value={laborRules.actasForTerminationInYear}
                         onChange={e => setLaborRules({ ...laborRules, actasForTerminationInYear: Number(e.target.value) })} />
                     </div>
                   </div>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#8892a8", marginTop: 10 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--color-text-muted)", marginTop: 10 }}>
                     <input
                       type="checkbox"
                       checked={laborRules.directLateAfterTolerance}
@@ -2667,35 +2959,35 @@ sin importar mayúsculas o tildes.`}</pre>
                 </div>
 
                 <div style={{ border: "1px solid rgba(99,132,255,0.08)", borderRadius: 10, padding: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "#cbd5e1", marginBottom: 8 }}>Reglas de faltas</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-soft)", marginBottom: 8 }}>Reglas de faltas</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Horas máximas para justificar una falta</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>Horas máximas para justificar una falta</label>
                       <input type="number" className="input-field" value={laborRules.absenceJustificationDeadlineHours}
                         onChange={e => setLaborRules({ ...laborRules, absenceJustificationDeadlineHours: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Rescisión por faltas injustificadas desde #</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>Rescisión por faltas injustificadas desde #</label>
                       <input type="number" className="input-field" value={laborRules.absenceTerminationFromCount}
                         onChange={e => setLaborRules({ ...laborRules, absenceTerminationFromCount: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días de suspensión por 1 falta</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>Días de suspensión por 1 falta</label>
                       <input type="number" className="input-field" value={laborRules.absenceSuspensionDays1}
                         onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays1: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días de suspensión por 2 faltas</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>Días de suspensión por 2 faltas</label>
                       <input type="number" className="input-field" value={laborRules.absenceSuspensionDays2}
                         onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays2: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días de suspensión por 3 faltas</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>Días de suspensión por 3 faltas</label>
                       <input type="number" className="input-field" value={laborRules.absenceSuspensionDays3}
                         onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays3: Number(e.target.value) })} />
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días extra por reincidencia</label>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>Días extra por reincidencia</label>
                       <input type="number" className="input-field" value={laborRules.repeatOffenseExtraSuspensionDays}
                         onChange={e => setLaborRules({ ...laborRules, repeatOffenseExtraSuspensionDays: Number(e.target.value) })} />
                     </div>
@@ -2750,7 +3042,7 @@ sin importar mayúsculas o tildes.`}</pre>
         <div className="chat-panel">
           {/* Header */}
           <div style={{
-            padding: "16px 20px", borderBottom: "1px solid rgba(99,132,255,0.1)",
+            padding: "16px 20px", borderBottom: "1px solid var(--color-border)",
             display: "flex", alignItems: "center", gap: 10,
           }}>
             <div style={{
@@ -2763,9 +3055,9 @@ sin importar mayúsculas o tildes.`}</pre>
               </svg>
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Asistente IA</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-text)" }}>Asistente IA</div>
               <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ color: "#5a6580" }}>chat + BBDD</span>
+                <span style={{ color: "var(--color-text-muted)" }}>chat + BBDD</span>
                 {attendanceJson ? (
                   <span style={{ color: "#34d399" }}>· JSON listo ✓</span>
                 ) : (
@@ -2785,8 +3077,8 @@ sin importar mayúsculas o tildes.`}</pre>
                   URL.revokeObjectURL(url);
                 }}
                 style={{
-                  background: "rgba(99,132,255,0.1)", border: "1px solid rgba(99,132,255,0.2)",
-                  borderRadius: 7, padding: "4px 8px", color: "#818cf8",
+                  background: "var(--color-pill-active-bg)", border: "1px solid var(--color-border-strong)",
+                  borderRadius: 7, padding: "4px 8px", color: "var(--color-link)",
                   cursor: "pointer", fontSize: 10, fontFamily: "inherit",
                 }}
                 title="Descargar JSON"
@@ -2797,7 +3089,7 @@ sin importar mayúsculas o tildes.`}</pre>
             {chatMessages.length > 0 && (
               <button
                 onClick={() => { setChatMessages([]); setChatError(null); }}
-                style={{ background: "none", border: "none", color: "#5a6580", cursor: "pointer", padding: 4, fontSize: 11 }}
+                style={{ background: "none", border: "none", color: "var(--color-text-muted)", cursor: "pointer", padding: 4, fontSize: 11 }}
                 title="Limpiar chat"
               >
                 Limpiar
@@ -2814,12 +3106,12 @@ sin importar mayúsculas o tildes.`}</pre>
             {chatMessages.length === 0 && (
               <div style={{ textAlign: "center", margin: "auto", padding: "0 16px" }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text)", marginBottom: 8 }}>
                   {records.length === 0
                     ? "Carga datos primero"
                     : "¿En qué puedo ayudarte?"}
                 </div>
-                <div style={{ fontSize: 12, color: "#5a6580", lineHeight: 1.6 }}>
+                <div style={{ fontSize: 12, color: "var(--color-text-muted)", lineHeight: 1.6 }}>
                   {records.length === 0
                     ? "Sube un archivo .xlsx para poder analizar asistencias."
                     : "Pregúntame sobre puntualidad, retardos, horas trabajadas o cualquier análisis del historial guardado en la base de datos."}
@@ -2918,9 +3210,9 @@ sin importar mayúsculas o tildes.`}</pre>
         <div className="modal-overlay" onClick={() => { if (!isUploading) setShowUpload(false); }}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>Importar Archivo de Odoo</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--color-text)" }}>Importar Archivo de Odoo</div>
               <button onClick={() => { if (!isUploading) setShowUpload(false); }}
-                style={{ background: "none", border: "none", color: "#5a6580", cursor: "pointer", padding: 4 }}>
+                style={{ background: "none", border: "none", color: "var(--color-text-muted)", cursor: "pointer", padding: 4 }}>
                 <Icons.X />
               </button>
             </div>
@@ -2940,13 +3232,13 @@ sin importar mayúsculas o tildes.`}</pre>
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", marginBottom: 4 }}>
                 {isUploading ? "Procesando..." : "Haz clic para seleccionar tu archivo .xlsx"}
               </div>
-              <div style={{ fontSize: 12, color: "#5a6580" }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
                 {isUploading ? <span className="pulse">Leyendo y normalizando datos...</span> : "o arrastra aquí"}
               </div>
-              <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 12 }}>
+              <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 12 }}>
                 Formato esperado: Reporte de Asistencia de Odoo (hr.attendance)
               </div>
             </div>
@@ -2958,14 +3250,14 @@ sin importar mayúsculas o tildes.`}</pre>
                   <div style={{ fontSize: 12, color: "#f87171", fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Alert /> Error de importación
                   </div>
-                  <div style={{ fontSize: 11, color: "#8892a8" }}>{uploadError}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{uploadError}</div>
                 </>
               ) : uploadSummary ? (
                 <>
                   <div style={{ fontSize: 12, color: "#34d399", fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Check /> Importación completada
                   </div>
-                  <div style={{ fontSize: 11, color: "#8892a8", lineHeight: 1.8, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", lineHeight: 1.8, fontFamily: "'JetBrains Mono', monospace" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", color: "#34d399" }}>
                       <Icons.Check /> Archivo: {uploadSummary.fileName}
                     </div>
@@ -3000,7 +3292,7 @@ sin importar mayúsculas o tildes.`}</pre>
                   <div style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
                     <Icons.Alert /> Proceso de Importación
                   </div>
-                  <div style={{ fontSize: 11, color: "#8892a8", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", lineHeight: 1.6 }}>
                     1. Se leerán las filas con datos (ignorando subtotales y encabezados)<br />
                     2. Se limpiarán nombres y se normalizarán fechas/horas<br />
                     3. Se detectarán duplicados (empleado + fecha + hora de entrada)<br />
