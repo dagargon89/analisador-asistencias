@@ -2550,7 +2550,11 @@ sin importar mayúsculas o tildes.`}</pre>
       {/* --- SETTINGS MODAL --- */}
       {showSettings && (
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            onClick={e => e.stopPropagation()}
+            style={{ width: "75vw", maxWidth: "1200px" }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
               <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>Configuración de Horarios</div>
               <button onClick={() => setShowSettings(false)} style={{ background: "none", border: "none", color: "#5a6580", cursor: "pointer", padding: 4 }}>
@@ -2558,131 +2562,147 @@ sin importar mayúsculas o tildes.`}</pre>
               </button>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
-                  <Icons.Clock /> Hora de Entrada Programada
-                </label>
-                <input type="time" className="input-field" value={config.entryTime}
-                  onChange={e => setConfig({ ...config, entryTime: e.target.value })} />
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
-                  <Icons.Clock /> Hora de Salida Programada
-                </label>
-                <input type="time" className="input-field" value={config.exitTime}
-                  onChange={e => setConfig({ ...config, exitTime: e.target.value })} />
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
-                  Minutos de Tolerancia (aún cuenta como "a tiempo")
-                </label>
-                <input type="number" className="input-field" value={config.toleranceMinutes}
-                  onChange={e => setConfig({ ...config, toleranceMinutes: Number(e.target.value) })} />
-                <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 4 }}>
-                  Entrada hasta las {(() => {
-                    const [h, m] = config.entryTime.split(":").map(Number);
-                    const total = h * 60 + m + config.toleranceMinutes;
-                    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-                  })()} se considera a tiempo
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16, alignItems: "start" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                      <Icons.Clock /> Hora de Entrada Programada
+                    </label>
+                    <input type="time" className="input-field" value={config.entryTime}
+                      onChange={e => setConfig({ ...config, entryTime: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                      <Icons.Clock /> Hora de Salida Programada
+                    </label>
+                    <input type="time" className="input-field" value={config.exitTime}
+                      onChange={e => setConfig({ ...config, exitTime: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                      Minutos de Tolerancia (aún cuenta como "a tiempo")
+                    </label>
+                    <input type="number" className="input-field" value={config.toleranceMinutes}
+                      onChange={e => setConfig({ ...config, toleranceMinutes: Number(e.target.value) })} />
+                    <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 4 }}>
+                      Entrada hasta las {(() => {
+                        const [h, m] = config.entryTime.split(":").map(Number);
+                        const total = h * 60 + m + config.toleranceMinutes;
+                        return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+                      })()} se considera a tiempo
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                      Umbral de Retardo Mayor (minutos después de la entrada)
+                    </label>
+                    <input type="number" className="input-field" value={config.lateThresholdMinutes}
+                      onChange={e => setConfig({ ...config, lateThresholdMinutes: Number(e.target.value) })} />
+                    <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 4 }}>
+                      Después de {config.lateThresholdMinutes} min se clasifica como retardo mayor
+                    </div>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
+                      Horas de Trabajo por Día (jornada estándar)
+                    </label>
+                    <input type="number" step="0.5" className="input-field" value={config.workingHoursPerDay}
+                      onChange={e => setConfig({ ...config, workingHoursPerDay: Number(e.target.value) })} />
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: 16, borderRadius: 12,
+                  background: "rgba(99,132,255,0.04)", border: "1px solid rgba(99,132,255,0.08)",
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#818cf8", marginBottom: 8 }}>Resumen de Clasificación</div>
+                  <div style={{ fontSize: 12, color: "#8892a8", lineHeight: 1.8 }}>
+                    <span className="badge badge-green" style={{ marginRight: 8 }}>A Tiempo</span> Entrada ≤ {config.entryTime} + {config.toleranceMinutes} min<br />
+                    <span className="badge badge-amber" style={{ marginRight: 8 }}>Retardo</span> Entrada entre +{config.toleranceMinutes} y +{config.lateThresholdMinutes} min<br />
+                    <span className="badge badge-red" style={{ marginRight: 8 }}>Ret. Mayor</span> Entrada {">"} +{config.lateThresholdMinutes} min
+                  </div>
                 </div>
               </div>
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
-                  Umbral de Retardo Mayor (minutos después de la entrada)
-                </label>
-                <input type="number" className="input-field" value={config.lateThresholdMinutes}
-                  onChange={e => setConfig({ ...config, lateThresholdMinutes: Number(e.target.value) })} />
-                <div style={{ fontSize: 11, color: "#3d4f6f", marginTop: 4 }}>
-                  Después de {config.lateThresholdMinutes} min se clasifica como retardo mayor
-                </div>
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "#8892a8", marginBottom: 6, fontWeight: 500 }}>
-                  Horas de Trabajo por Día (jornada estándar)
-                </label>
-                <input type="number" step="0.5" className="input-field" value={config.workingHoursPerDay}
-                  onChange={e => setConfig({ ...config, workingHoursPerDay: Number(e.target.value) })} />
-              </div>
-            </div>
 
-            <div style={{
-              marginTop: 24, padding: 16, borderRadius: 12,
-              background: "rgba(99,132,255,0.04)", border: "1px solid rgba(99,132,255,0.08)",
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#818cf8", marginBottom: 8 }}>Resumen de Clasificación</div>
-              <div style={{ fontSize: 12, color: "#8892a8", lineHeight: 1.8 }}>
-                <span className="badge badge-green" style={{ marginRight: 8 }}>A Tiempo</span> Entrada ≤ {config.entryTime} + {config.toleranceMinutes} min<br />
-                <span className="badge badge-amber" style={{ marginRight: 8 }}>Retardo</span> Entrada entre +{config.toleranceMinutes} y +{config.lateThresholdMinutes} min<br />
-                <span className="badge badge-red" style={{ marginRight: 8 }}>Ret. Mayor</span> Entrada {">"} +{config.lateThresholdMinutes} min
-              </div>
-            </div>
-
-            <div style={{
-              marginTop: 16, padding: 16, borderRadius: 12,
-              background: "rgba(99,132,255,0.03)", border: "1px solid rgba(99,132,255,0.08)",
-            }}>
+              <div style={{
+                padding: 16, borderRadius: 12,
+                background: "rgba(99,132,255,0.03)", border: "1px solid rgba(99,132,255,0.08)",
+              }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: "#818cf8", marginBottom: 12 }}>
                 Reglas Laborales (Reglamento)
               </div>
               <div style={{ fontSize: 11, color: "#5a6580", marginBottom: 10 }}>
                 La tolerancia de llegada se toma desde “Configuración de Horarios” para evitar duplicidad.
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Retardo formal desde llegada #</label>
-                  <input type="number" className="input-field" value={laborRules.lateFormalFromNthInMonth}
-                    onChange={e => setLaborRules({ ...laborRules, lateFormalFromNthInMonth: Number(e.target.value) })} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ border: "1px solid rgba(99,132,255,0.08)", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#cbd5e1", marginBottom: 8 }}>Reglas de retardos</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>¿Desde qué llegada tarde cuenta retardo formal?</label>
+                      <input type="number" className="input-field" value={laborRules.lateFormalFromNthInMonth}
+                        onChange={e => setLaborRules({ ...laborRules, lateFormalFromNthInMonth: Number(e.target.value) })} />
+                      <div style={{ fontSize: 10, color: "#5a6580", marginTop: 3 }}>Ejemplo: 4 = la 4ta llegada tarde ya cuenta formal.</div>
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>¿Desde qué número de retardos se levanta acta?</label>
+                      <input type="number" className="input-field" value={laborRules.formalLateActaAtNth}
+                        onChange={e => setLaborRules({ ...laborRules, formalLateActaAtNth: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>¿Cuántas actas en un año causan rescisión?</label>
+                      <input type="number" className="input-field" value={laborRules.actasForTerminationInYear}
+                        onChange={e => setLaborRules({ ...laborRules, actasForTerminationInYear: Number(e.target.value) })} />
+                    </div>
+                  </div>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#8892a8", marginTop: 10 }}>
+                    <input
+                      type="checkbox"
+                      checked={laborRules.directLateAfterTolerance}
+                      onChange={e => setLaborRules({ ...laborRules, directLateAfterTolerance: e.target.checked })}
+                    />
+                    Contar como retardo directo cuando se rebasa la tolerancia
+                  </label>
                 </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Acta por retardos desde #</label>
-                  <input type="number" className="input-field" value={laborRules.formalLateActaAtNth}
-                    onChange={e => setLaborRules({ ...laborRules, formalLateActaAtNth: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Actas para rescisión (año)</label>
-                  <input type="number" className="input-field" value={laborRules.actasForTerminationInYear}
-                    onChange={e => setLaborRules({ ...laborRules, actasForTerminationInYear: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Límite justificación falta (horas)</label>
-                  <input type="number" className="input-field" value={laborRules.absenceJustificationDeadlineHours}
-                    onChange={e => setLaborRules({ ...laborRules, absenceJustificationDeadlineHours: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Rescisión por faltas desde #</label>
-                  <input type="number" className="input-field" value={laborRules.absenceTerminationFromCount}
-                    onChange={e => setLaborRules({ ...laborRules, absenceTerminationFromCount: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Suspensión por 1 falta (días)</label>
-                  <input type="number" className="input-field" value={laborRules.absenceSuspensionDays1}
-                    onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays1: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Suspensión por 2 faltas (días)</label>
-                  <input type="number" className="input-field" value={laborRules.absenceSuspensionDays2}
-                    onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays2: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Suspensión por 3 faltas (días)</label>
-                  <input type="number" className="input-field" value={laborRules.absenceSuspensionDays3}
-                    onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays3: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Reincidencia: días extra</label>
-                  <input type="number" className="input-field" value={laborRules.repeatOffenseExtraSuspensionDays}
-                    onChange={e => setLaborRules({ ...laborRules, repeatOffenseExtraSuspensionDays: Number(e.target.value) })} />
+
+                <div style={{ border: "1px solid rgba(99,132,255,0.08)", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#cbd5e1", marginBottom: 8 }}>Reglas de faltas</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Horas máximas para justificar una falta</label>
+                      <input type="number" className="input-field" value={laborRules.absenceJustificationDeadlineHours}
+                        onChange={e => setLaborRules({ ...laborRules, absenceJustificationDeadlineHours: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Rescisión por faltas injustificadas desde #</label>
+                      <input type="number" className="input-field" value={laborRules.absenceTerminationFromCount}
+                        onChange={e => setLaborRules({ ...laborRules, absenceTerminationFromCount: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días de suspensión por 1 falta</label>
+                      <input type="number" className="input-field" value={laborRules.absenceSuspensionDays1}
+                        onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays1: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días de suspensión por 2 faltas</label>
+                      <input type="number" className="input-field" value={laborRules.absenceSuspensionDays2}
+                        onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays2: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días de suspensión por 3 faltas</label>
+                      <input type="number" className="input-field" value={laborRules.absenceSuspensionDays3}
+                        onChange={e => setLaborRules({ ...laborRules, absenceSuspensionDays3: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: 11, color: "#8892a8", marginBottom: 4 }}>Días extra por reincidencia</label>
+                      <input type="number" className="input-field" value={laborRules.repeatOffenseExtraSuspensionDays}
+                        onChange={e => setLaborRules({ ...laborRules, repeatOffenseExtraSuspensionDays: Number(e.target.value) })} />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#8892a8", marginTop: 12 }}>
-                <input
-                  type="checkbox"
-                  checked={laborRules.directLateAfterTolerance}
-                  onChange={e => setLaborRules({ ...laborRules, directLateAfterTolerance: e.target.checked })}
-                />
-                Considerar retardo directo al rebasar tolerancia
-              </label>
+            </div>
             </div>
 
             {settingsError && (
