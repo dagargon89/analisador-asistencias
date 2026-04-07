@@ -1574,12 +1574,93 @@ export default function AttendancePlatform() {
           font-size: 11px; font-weight: 600;
           letter-spacing: 0.3px;
           font-family: 'JetBrains Mono', monospace;
+          border: 1px solid transparent;
         }
         .badge-green { background: rgba(16,185,129,0.12); color: #34d399; }
         .badge-amber { background: rgba(245,158,11,0.12); color: #fbbf24; }
         .badge-red { background: rgba(239,68,68,0.12); color: #f87171; }
         .badge-purple { background: rgba(168,85,247,0.12); color: #c084fc; }
         .badge-blue { background: rgba(99,132,255,0.12); color: #818cf8; }
+
+        html[data-theme="light"] .badge-green {
+          background: rgba(4, 120, 87, 0.2);
+          color: #047857;
+          border: 1px solid rgba(4, 120, 87, 0.45);
+          font-weight: 700;
+        }
+        html[data-theme="light"] .badge-amber {
+          background: rgba(180, 83, 9, 0.22);
+          color: #9a3412;
+          border: 1px solid rgba(180, 83, 9, 0.45);
+          font-weight: 700;
+        }
+        html[data-theme="light"] .badge-red {
+          background: rgba(185, 28, 28, 0.18);
+          color: #b91c1c;
+          border: 1px solid rgba(185, 28, 28, 0.42);
+          font-weight: 700;
+        }
+        html[data-theme="light"] .badge-purple {
+          background: rgba(107, 33, 168, 0.18);
+          color: #6b21a8;
+          border: 1px solid rgba(107, 33, 168, 0.4);
+          font-weight: 700;
+        }
+        html[data-theme="light"] .badge-blue {
+          background: rgba(37, 99, 235, 0.18);
+          color: #1d4ed8;
+          border: 1px solid rgba(37, 99, 235, 0.4);
+          font-weight: 700;
+        }
+
+        .emp-stat-tile {
+          text-align: center;
+          padding: 8px;
+          border-radius: 8px;
+          border: 1px solid transparent;
+        }
+        .emp-stat-tile--green { background: rgba(16,185,129,0.06); }
+        .emp-stat-tile--amber { background: rgba(245,158,11,0.06); }
+        .emp-stat-tile--red { background: rgba(239,68,68,0.06); }
+        .emp-stat-tile--purple { background: rgba(168,85,247,0.06); }
+        .emp-stat-tile__value {
+          font-size: 18px;
+          font-weight: 700;
+          font-family: 'JetBrains Mono', monospace;
+        }
+        .emp-stat-tile__value--green { color: #34d399; }
+        .emp-stat-tile__value--amber { color: #f59e0b; }
+        .emp-stat-tile__value--red { color: #ef4444; }
+        .emp-stat-tile__value--purple { color: #9333ea; }
+        .emp-stat-tile__label { font-size: 10px; color: var(--color-text-muted); font-weight: 600; }
+        html[data-theme="light"] .emp-stat-tile--green {
+          background: rgba(4, 120, 87, 0.14);
+          border-color: rgba(4, 120, 87, 0.35);
+        }
+        html[data-theme="light"] .emp-stat-tile--amber {
+          background: rgba(180, 83, 9, 0.14);
+          border-color: rgba(180, 83, 9, 0.38);
+        }
+        html[data-theme="light"] .emp-stat-tile--red {
+          background: rgba(185, 28, 28, 0.12);
+          border-color: rgba(185, 28, 28, 0.38);
+        }
+        html[data-theme="light"] .emp-stat-tile--purple {
+          background: rgba(107, 33, 168, 0.12);
+          border-color: rgba(107, 33, 168, 0.38);
+        }
+        html[data-theme="light"] .emp-stat-tile__value--green { color: #047857; }
+        html[data-theme="light"] .emp-stat-tile__value--amber { color: #b45309; }
+        html[data-theme="light"] .emp-stat-tile__value--red { color: #b91c1c; }
+        html[data-theme="light"] .emp-stat-tile__value--purple { color: #6b21a8; }
+        html[data-theme="light"] .emp-stat-tile__label { color: var(--color-text-soft); font-weight: 700; }
+
+        .emp-pct-good { color: #34d399; }
+        .emp-pct-warn { color: #f59e0b; }
+        .emp-pct-bad { color: #ef4444; }
+        html[data-theme="light"] .emp-pct-good { color: #047857; }
+        html[data-theme="light"] .emp-pct-warn { color: #b45309; }
+        html[data-theme="light"] .emp-pct-bad { color: #b91c1c; }
 
         .input-field {
           background: var(--color-input-bg);
@@ -2387,27 +2468,27 @@ export default function AttendancePlatform() {
                         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)" }}>{emp.name}</div>
                         <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 2 }}>{emp.days} días registrados</div>
                       </div>
-                      <div style={{
-                        fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
-                        color: pct >= 80 ? "#34d399" : pct >= 60 ? "#fbbf24" : "#f87171",
-                      }}>{pct}%</div>
+                      <div
+                        className={pct >= 80 ? "emp-pct-good" : pct >= 60 ? "emp-pct-warn" : "emp-pct-bad"}
+                        style={{ fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}
+                      >{pct}%</div>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                      <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(16,185,129,0.06)" }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono', monospace" }}>{emp.onTime}</div>
-                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>A Tiempo</div>
+                      <div className="emp-stat-tile emp-stat-tile--green">
+                        <div className="emp-stat-tile__value emp-stat-tile__value--green">{emp.onTime}</div>
+                        <div className="emp-stat-tile__label">A Tiempo</div>
                       </div>
-                      <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(245,158,11,0.06)" }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: "#fbbf24", fontFamily: "'JetBrains Mono', monospace" }}>{emp.late}</div>
-                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Retardos</div>
+                      <div className="emp-stat-tile emp-stat-tile--amber">
+                        <div className="emp-stat-tile__value emp-stat-tile__value--amber">{emp.late}</div>
+                        <div className="emp-stat-tile__label">Retardos</div>
                       </div>
-                      <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(239,68,68,0.06)" }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: "#f87171", fontFamily: "'JetBrains Mono', monospace" }}>{emp.veryLate}</div>
-                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Ret. Mayor</div>
+                      <div className="emp-stat-tile emp-stat-tile--red">
+                        <div className="emp-stat-tile__value emp-stat-tile__value--red">{emp.veryLate}</div>
+                        <div className="emp-stat-tile__label">Ret. Mayor</div>
                       </div>
-                      <div style={{ textAlign: "center", padding: 8, borderRadius: 8, background: "rgba(168,85,247,0.06)" }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{emp.absences}</div>
-                        <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Faltas</div>
+                      <div className="emp-stat-tile emp-stat-tile--purple">
+                        <div className="emp-stat-tile__value emp-stat-tile__value--purple">{emp.absences}</div>
+                        <div className="emp-stat-tile__label">Faltas</div>
                       </div>
                     </div>
                     <div style={{ height: 4, borderRadius: 4, background: "rgba(99,132,255,0.08)" }}>
