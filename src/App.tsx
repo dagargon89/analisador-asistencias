@@ -34,6 +34,8 @@ type UploadSummary = {
   uploadedAt: string;
 };
 
+type EmployeeTableFilter = "all" | "withAttendance" | "withAbsences" | "withIncidents";
+
 // --- XLSX Parsing Utilities ---
 const FIELD_ALIASES = {
   employee: ["employee", "empleado", "employee name", "nombre", "trabajador"],
@@ -544,6 +546,40 @@ function inlineMarkdown(text: string): React.ReactNode {
   });
 }
 
+type PaginationControlsProps = {
+  page: number;
+  totalItems: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  itemLabel: string;
+};
+
+function PaginationControls({ page, totalItems, pageSize, onPageChange, itemLabel }: PaginationControlsProps) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  const start = totalItems === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const end = Math.min(safePage * pageSize, totalItems);
+
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 12 }}>
+      <div style={{ fontSize: 11, color: "#5a6580" }}>
+        {totalItems === 0 ? `Sin ${itemLabel}` : `Mostrando ${start}-${end} de ${totalItems} ${itemLabel}`}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button className="btn-ghost" onClick={() => onPageChange(safePage - 1)} disabled={safePage <= 1}>
+          Anterior
+        </button>
+        <span style={{ fontSize: 11, color: "#8892a8", minWidth: 72, textAlign: "center" }}>
+          Página {safePage}/{totalPages}
+        </span>
+        <button className="btn-ghost" onClick={() => onPageChange(safePage + 1)} disabled={safePage >= totalPages}>
+          Siguiente
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // --- Main App Component ---
 export default function AttendancePlatform() {
   const { user, doLogout } = useAuth();
@@ -559,6 +595,13 @@ export default function AttendancePlatform() {
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedWeek, setSelectedWeek] = useState(0);
   const [selectedEmployee, setSelectedEmployee] = useState("all");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeTableFilter, setEmployeeTableFilter] = useState<EmployeeTableFilter>("withAttendance");
+  const [dashboardEmployeesPage, setDashboardEmployeesPage] = useState(1);
+  const [dailyPage, setDailyPage] = useState(1);
+  const [employeesPage, setEmployeesPage] = useState(1);
+  const [incidentsPage, setIncidentsPage] = useState(1);
+  const [absencesPage, setAbsencesPage] = useState(1);
   const [config, setConfig] = useState<Config>({
     entryTime: "08:30",
     exitTime: "17:30",
@@ -585,6 +628,12 @@ export default function AttendancePlatform() {
     if (!localPart) return "US";
     return localPart.slice(0, 2).toUpperCase();
   }, [user?.email]);
+
+  const PAGE_SIZE_DASHBOARD_EMPLOYEES = 15;
+  const PAGE_SIZE_DAILY = 50;
+  const PAGE_SIZE_EMPLOYEES = 12;
+  const PAGE_SIZE_INCIDENTS = 50;
+  const PAGE_SIZE_ABSENCES = 100;
 
   // Derive employees and months dynamically from loaded records
   const employees = useMemo(
@@ -680,6 +729,17 @@ export default function AttendancePlatform() {
   }, [reportPeriod, weekOptions]);
 
   useEffect(() => {
+    setDailyPage(1);
+    setIncidentsPage(1);
+    setAbsencesPage(1);
+  }, [records, reportPeriod, selectedMonth, selectedWeek, selectedDay, selectedEmployee]);
+
+  useEffect(() => {
+    setDashboardEmployeesPage(1);
+    setEmployeesPage(1);
+  }, [employeeSearch, employeeTableFilter, records, reportPeriod, selectedMonth, selectedWeek, selectedDay, selectedEmployee]);
+
+  useEffect(() => {
     if (!isUserMenuOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
@@ -763,9 +823,19 @@ export default function AttendancePlatform() {
       else if (status === "late") late++;
       else veryLate++;
     });
+    const uniqueEmployees = new Set(filteredData.map((r) => r.employee)).size;
     const totalHours = filteredData.reduce((sum, r) => sum + r.hoursWorked, 0);
     const avgHours = filteredData.length > 0 ? totalHours / filteredData.length : 0;
-    return { onTime, late, veryLate, total: filteredData.length, totalHours, avgHours, absences: absenceData.length };
+    return {
+      onTime,
+      late,
+      veryLate,
+      totalRecords: filteredData.length,
+      uniqueEmployees,
+      totalHours,
+      avgHours,
+      absences: absenceData.length,
+    };
   }, [filteredData, config, absenceData]);
 
   const employeeReport = useMemo(() => {
@@ -795,6 +865,62 @@ export default function AttendancePlatform() {
     }
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
   }, [filteredData, config, absenceData, employees, selectedEmployee]);
+
+  const filteredEmployeeReport = useMemo(() => {
+    const searchKey = normalizeKey(employeeSearch);
+    return employeeReport.filter((emp) => {
+      if (searchKey && !normalizeKey(emp.name).includes(searchKey)) {
+        return false;
+      }
+      if (employeeTableFilter === "withAttendance" && emp.days === 0) {
+        return false;
+      }
+      if (employeeTableFilter === "withAbsences" && emp.absences === 0) {
+        return false;
+      }
+      if (employeeTableFilter === "withIncidents" && emp.late + emp.veryLate === 0) {
+        return false;
+      }
+      return true;
+    });
+  }, [employeeReport, employeeSearch, employeeTableFilter]);
+
+  const incidentsData = useMemo(
+    () =>
+      filteredData
+        .filter((r) => classifyEntry(r.entry, config) !== "ontime")
+        .sort((a, b) => {
+          const aDiff = timeToMinutes(a.entry) - timeToMinutes(config.entryTime);
+          const bDiff = timeToMinutes(b.entry) - timeToMinutes(config.entryTime);
+          return bDiff - aDiff;
+        }),
+    [filteredData, config]
+  );
+
+  const paginatedDashboardEmployees = useMemo(() => {
+    const start = (dashboardEmployeesPage - 1) * PAGE_SIZE_DASHBOARD_EMPLOYEES;
+    return filteredEmployeeReport.slice(start, start + PAGE_SIZE_DASHBOARD_EMPLOYEES);
+  }, [filteredEmployeeReport, dashboardEmployeesPage]);
+
+  const paginatedDailyData = useMemo(() => {
+    const start = (dailyPage - 1) * PAGE_SIZE_DAILY;
+    return filteredData.slice(start, start + PAGE_SIZE_DAILY);
+  }, [filteredData, dailyPage]);
+
+  const paginatedEmployeesCards = useMemo(() => {
+    const start = (employeesPage - 1) * PAGE_SIZE_EMPLOYEES;
+    return filteredEmployeeReport.slice(start, start + PAGE_SIZE_EMPLOYEES);
+  }, [filteredEmployeeReport, employeesPage]);
+
+  const paginatedIncidents = useMemo(() => {
+    const start = (incidentsPage - 1) * PAGE_SIZE_INCIDENTS;
+    return incidentsData.slice(start, start + PAGE_SIZE_INCIDENTS);
+  }, [incidentsData, incidentsPage]);
+
+  const paginatedAbsences = useMemo(() => {
+    const start = (absencesPage - 1) * PAGE_SIZE_ABSENCES;
+    return absenceData.slice(start, start + PAGE_SIZE_ABSENCES);
+  }, [absenceData, absencesPage]);
 
   const weekdayDistribution = useMemo(() => {
     const labels = ["Lun", "Mar", "Mié", "Jue", "Vie"];
@@ -1539,14 +1665,14 @@ export default function AttendancePlatform() {
                   <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>A Tiempo</div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono', monospace" }}>{stats.onTime}</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
-                    {stats.total > 0 ? Math.round(stats.onTime / stats.total * 100) : 0}% del total
+                    {stats.totalRecords > 0 ? Math.round(stats.onTime / stats.totalRecords * 100) : 0}% de registros
                   </div>
                 </div>
                 <div className="glass-panel stat-card amber" style={{ padding: 20 }}>
                   <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Retardos</div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#fbbf24", fontFamily: "'JetBrains Mono', monospace" }}>{stats.late}</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
-                    {stats.total > 0 ? Math.round(stats.late / stats.total * 100) : 0}% del total
+                    {stats.totalRecords > 0 ? Math.round(stats.late / stats.totalRecords * 100) : 0}% de registros
                   </div>
                 </div>
                 <div className="glass-panel stat-card red" style={{ padding: 20 }}>
@@ -1605,20 +1731,24 @@ export default function AttendancePlatform() {
                       <svg viewBox="0 0 120 120" style={{ transform: "rotate(-90deg)" }}>
                         <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(99,132,255,0.06)" strokeWidth="12" />
                         <circle cx="60" cy="60" r="50" fill="none" stroke="#34d399" strokeWidth="12"
-                          strokeDasharray={`${(stats.onTime / Math.max(stats.total, 1)) * 314} 314`}
+                          strokeDasharray={`${(stats.onTime / Math.max(stats.totalRecords, 1)) * 314} 314`}
                           strokeLinecap="round" />
                         <circle cx="60" cy="60" r="50" fill="none" stroke="#fbbf24" strokeWidth="12"
-                          strokeDasharray={`${(stats.late / Math.max(stats.total, 1)) * 314} 314`}
-                          strokeDashoffset={`-${(stats.onTime / Math.max(stats.total, 1)) * 314}`}
+                          strokeDasharray={`${(stats.late / Math.max(stats.totalRecords, 1)) * 314} 314`}
+                          strokeDashoffset={`-${(stats.onTime / Math.max(stats.totalRecords, 1)) * 314}`}
                           strokeLinecap="round" />
                         <circle cx="60" cy="60" r="50" fill="none" stroke="#f87171" strokeWidth="12"
-                          strokeDasharray={`${(stats.veryLate / Math.max(stats.total, 1)) * 314} 314`}
-                          strokeDashoffset={`-${((stats.onTime + stats.late) / Math.max(stats.total, 1)) * 314}`}
+                          strokeDasharray={`${(stats.veryLate / Math.max(stats.totalRecords, 1)) * 314} 314`}
+                          strokeDashoffset={`-${((stats.onTime + stats.late) / Math.max(stats.totalRecords, 1)) * 314}`}
                           strokeLinecap="round" />
                       </svg>
                       <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-                        <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", fontFamily: "'JetBrains Mono', monospace" }}>{stats.total}</div>
-                        <div style={{ fontSize: 10, color: "#5a6580" }}>registros</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", fontFamily: "'JetBrains Mono', monospace" }}>
+                          {reportPeriod === "day" ? stats.uniqueEmployees : stats.totalRecords}
+                        </div>
+                        <div style={{ fontSize: 10, color: "#5a6580" }}>
+                          {reportPeriod === "day" ? "personas con asistencia" : "registros"}
+                        </div>
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1633,6 +1763,9 @@ export default function AttendancePlatform() {
                           <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
                         </div>
                       ))}
+                      <div style={{ fontSize: 11, color: "#5a6580", marginTop: 4 }}>
+                        {stats.totalRecords} registros · {stats.uniqueEmployees} personas con asistencia
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1645,6 +1778,44 @@ export default function AttendancePlatform() {
                     Resumen por Empleado
                   </div>
                   <button className="btn-ghost" onClick={exportDashboard} disabled={employeeReport.length === 0}><Icons.Download /> Exportar</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) auto", gap: 10, marginBottom: 12 }}>
+                  <input
+                    type="text"
+                    value={employeeSearch}
+                    onChange={(e) => setEmployeeSearch(e.target.value)}
+                    placeholder="Buscar empleado..."
+                    aria-label="Buscar en resumen por empleado"
+                    style={{
+                      background: "rgba(10,14,23,0.8)",
+                      border: "1px solid rgba(99,132,255,0.16)",
+                      borderRadius: 10,
+                      color: "#e2e8f0",
+                      padding: "10px 12px",
+                      fontSize: 12,
+                    }}
+                  />
+                  <select
+                    value={employeeTableFilter}
+                    onChange={(e) => setEmployeeTableFilter(e.target.value as EmployeeTableFilter)}
+                    aria-label="Filtro rápido de empleados"
+                    style={{
+                      background: "rgba(10,14,23,0.8)",
+                      border: "1px solid rgba(99,132,255,0.16)",
+                      borderRadius: 10,
+                      color: "#e2e8f0",
+                      padding: "10px 12px",
+                      fontSize: 12,
+                    }}
+                  >
+                    <option value="all">Todos</option>
+                    <option value="withAttendance">Con asistencia</option>
+                    <option value="withAbsences">Con inasistencias</option>
+                    <option value="withIncidents">Con incidencias</option>
+                  </select>
+                </div>
+                <div style={{ fontSize: 11, color: "#5a6580", marginBottom: 12 }}>
+                  {filteredEmployeeReport.length} empleados filtrados ({employeeReport.length} totales)
                 </div>
                 <div className="table-container" style={{ maxHeight: 400, overflowY: "auto" }}>
                   <table>
@@ -1662,7 +1833,7 @@ export default function AttendancePlatform() {
                       </tr>
                     </thead>
                     <tbody>
-                      {employeeReport.slice(0, 15).map(emp => {
+                      {paginatedDashboardEmployees.map(emp => {
                         const pct = emp.days > 0 ? Math.round(emp.onTime / emp.days * 100) : 0;
                         return (
                           <tr key={emp.name}>
@@ -1688,9 +1859,23 @@ export default function AttendancePlatform() {
                           </tr>
                         );
                       })}
+                      {filteredEmployeeReport.length === 0 && (
+                        <tr>
+                          <td colSpan={9} style={{ color: "#5a6580", textAlign: "center", padding: 20 }}>
+                            Sin resultados para los filtros seleccionados.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+                <PaginationControls
+                  page={dashboardEmployeesPage}
+                  totalItems={filteredEmployeeReport.length}
+                  pageSize={PAGE_SIZE_DASHBOARD_EMPLOYEES}
+                  onPageChange={setDashboardEmployeesPage}
+                  itemLabel="empleados"
+                />
               </div>
             </>
           )}
@@ -1702,7 +1887,7 @@ export default function AttendancePlatform() {
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Reporte Detallado de Asistencia</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
-                    {filteredData.length} registros · {periodLabel}
+                    {filteredData.length} registros · {stats.uniqueEmployees} personas con asistencia · {periodLabel}
                   </div>
                 </div>
                 <button className="btn-primary" onClick={exportDaily} disabled={filteredData.length === 0}><Icons.Download /> Exportar a Excel</button>
@@ -1721,7 +1906,7 @@ export default function AttendancePlatform() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredData.slice(0, 50).map(r => {
+                    {paginatedDailyData.map(r => {
                       const status = classifyEntry(r.entry, config);
                       const diffMins = timeToMinutes(r.entry) - timeToMinutes(config.entryTime);
                       return (
@@ -1745,6 +1930,13 @@ export default function AttendancePlatform() {
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                page={dailyPage}
+                totalItems={filteredData.length}
+                pageSize={PAGE_SIZE_DAILY}
+                onPageChange={setDailyPage}
+                itemLabel="registros"
+              />
             </div>
           )}
 
@@ -1754,12 +1946,47 @@ export default function AttendancePlatform() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>Por Empleado</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>{employeeReport.length} empleados · {periodLabel}</div>
+                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>{filteredEmployeeReport.length} empleados filtrados ({employeeReport.length} totales) · {periodLabel}</div>
                 </div>
                 <button className="btn-ghost" onClick={exportEmployees} disabled={employeeReport.length === 0}><Icons.Download /> Exportar</button>
               </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) auto", gap: 10, marginBottom: 12 }}>
+              <input
+                type="text"
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                placeholder="Buscar empleado..."
+                aria-label="Buscar en cards por empleado"
+                style={{
+                  background: "rgba(10,14,23,0.8)",
+                  border: "1px solid rgba(99,132,255,0.16)",
+                  borderRadius: 10,
+                  color: "#e2e8f0",
+                  padding: "10px 12px",
+                  fontSize: 12,
+                }}
+              />
+              <select
+                value={employeeTableFilter}
+                onChange={(e) => setEmployeeTableFilter(e.target.value as EmployeeTableFilter)}
+                aria-label="Filtro rápido de cards de empleado"
+                style={{
+                  background: "rgba(10,14,23,0.8)",
+                  border: "1px solid rgba(99,132,255,0.16)",
+                  borderRadius: 10,
+                  color: "#e2e8f0",
+                  padding: "10px 12px",
+                  fontSize: 12,
+                }}
+              >
+                <option value="all">Todos</option>
+                <option value="withAttendance">Con asistencia</option>
+                <option value="withAbsences">Con inasistencias</option>
+                <option value="withIncidents">Con incidencias</option>
+              </select>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-              {employeeReport.slice(0, 12).map(emp => {
+              {paginatedEmployeesCards.map(emp => {
                 const pct = emp.days > 0 ? Math.round(emp.onTime / emp.days * 100) : 0;
                 return (
                   <div key={emp.name} className="glass-panel" style={{ padding: 20 }}>
@@ -1805,7 +2032,19 @@ export default function AttendancePlatform() {
                   </div>
                 );
               })}
+              {filteredEmployeeReport.length === 0 && (
+                <div className="glass-panel" style={{ padding: 20, color: "#5a6580", fontSize: 12 }}>
+                  Sin resultados para los filtros seleccionados.
+                </div>
+              )}
             </div>
+            <PaginationControls
+              page={employeesPage}
+              totalItems={filteredEmployeeReport.length}
+              pageSize={PAGE_SIZE_EMPLOYEES}
+              onPageChange={setEmployeesPage}
+              itemLabel="empleados"
+            />
             </>
           )}
 
@@ -1816,7 +2055,7 @@ export default function AttendancePlatform() {
                 <div style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>
                   Registro de Incidencias
                 </div>
-                <button className="btn-ghost" onClick={exportIncidents} disabled={filteredData.filter(r => classifyEntry(r.entry, config) !== "ontime").length === 0}><Icons.Download /> Exportar</button>
+                <button className="btn-ghost" onClick={exportIncidents} disabled={incidentsData.length === 0}><Icons.Download /> Exportar</button>
               </div>
               <div style={{ fontSize: 12, color: "#5a6580", marginBottom: 20 }}>
                 Solo retardos y retardos mayores • Configuración: Entrada {config.entryTime}, Tolerancia {config.toleranceMinutes} min, Retardo mayor {">"}{config.lateThresholdMinutes} min
@@ -1833,15 +2072,7 @@ export default function AttendancePlatform() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredData
-                      .filter(r => classifyEntry(r.entry, config) !== "ontime")
-                      .sort((a, b) => {
-                        const aDiff = timeToMinutes(a.entry) - timeToMinutes(config.entryTime);
-                        const bDiff = timeToMinutes(b.entry) - timeToMinutes(config.entryTime);
-                        return bDiff - aDiff;
-                      })
-                      .slice(0, 50)
-                      .map(r => {
+                    {paginatedIncidents.map(r => {
                         const status = classifyEntry(r.entry, config);
                         const diffMins = timeToMinutes(r.entry) - timeToMinutes(config.entryTime);
                         return (
@@ -1857,10 +2088,17 @@ export default function AttendancePlatform() {
                             <td style={{ color: "#f87171", fontWeight: 600 }}>+{diffMins} min</td>
                           </tr>
                         );
-                      })}
+                    })}
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                page={incidentsPage}
+                totalItems={incidentsData.length}
+                pageSize={PAGE_SIZE_INCIDENTS}
+                onPageChange={setIncidentsPage}
+                itemLabel="incidencias"
+              />
             </div>
           )}
 
@@ -1922,7 +2160,7 @@ export default function AttendancePlatform() {
                         </tr>
                       </thead>
                       <tbody>
-                        {absenceData.slice(0, 100).map((a, i) => {
+                        {paginatedAbsences.map((a, i) => {
                           const d = new Date(a.date + "T00:00:00");
                           const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
                           return (
@@ -1936,12 +2174,16 @@ export default function AttendancePlatform() {
                         })}
                       </tbody>
                     </table>
-                    {absenceData.length > 100 && (
-                      <div style={{ padding: "12px 0", textAlign: "center", fontSize: 12, color: "#5a6580" }}>
-                        Mostrando 100 de {absenceData.length} inasistencias — exporta el archivo para ver todas.
-                      </div>
-                    )}
                   </div>
+                )}
+                {absenceData.length > 0 && (
+                  <PaginationControls
+                    page={absencesPage}
+                    totalItems={absenceData.length}
+                    pageSize={PAGE_SIZE_ABSENCES}
+                    onPageChange={setAbsencesPage}
+                    itemLabel="inasistencias"
+                  />
                 )}
               </div>
 
