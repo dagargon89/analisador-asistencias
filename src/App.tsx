@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import * as XLSX from "xlsx";
-import { getRecords, postChat, postImport } from "./api";
+import { getEmployees, getRecords, postChat, postImport } from "./api";
 import { useAuth } from "./auth/AuthContext";
 
 // --- Types ---
@@ -580,6 +580,80 @@ function PaginationControls({ page, totalItems, pageSize, onPageChange, itemLabe
   );
 }
 
+function HelpTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState<"right" | "left">("right");
+  const triggerRef = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const tooltipWidth = 240;
+    const gap = 8;
+    const margin = 8;
+    const canOpenRight = rect.right + gap + tooltipWidth <= window.innerWidth - margin;
+    setSide(canOpenRight ? "right" : "left");
+  }, [open]);
+
+  return (
+    <span
+      ref={triggerRef}
+      style={{ position: "relative", display: "inline-flex", alignItems: "center", zIndex: 40 }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label="Ver explicación del cálculo"
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: "50%",
+          border: "1px solid rgba(99,132,255,0.35)",
+          background: "rgba(99,132,255,0.12)",
+          color: "#818cf8",
+          fontSize: 10,
+          fontWeight: 700,
+          lineHeight: 1,
+          cursor: "help",
+          padding: 0,
+        }}
+      >
+        i
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: side === "right" ? "calc(100% + 8px)" : undefined,
+            right: side === "left" ? "calc(100% + 8px)" : undefined,
+            transform: "translateY(-50%)",
+            width: 240,
+            background: "#0f1726",
+            color: "#cbd5e1",
+            border: "1px solid rgba(99,132,255,0.25)",
+            borderRadius: 8,
+            padding: "8px 10px",
+            fontSize: 11,
+            lineHeight: 1.45,
+            zIndex: 9999,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+            pointerEvents: "auto",
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // --- Main App Component ---
 export default function AttendancePlatform() {
   const { user, doLogout } = useAuth();
@@ -590,6 +664,7 @@ export default function AttendancePlatform() {
   const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState<Array<{ id: number; name: string; isActive: boolean }>>([]);
   const [reportPeriod, setReportPeriod] = useState("month");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedDay, setSelectedDay] = useState("");
@@ -628,6 +703,20 @@ export default function AttendancePlatform() {
     if (!localPart) return "US";
     return localPart.slice(0, 2).toUpperCase();
   }, [user?.email]);
+  const todayIso = useMemo(() => toIsoDate(new Date()), []);
+  const widgetHelp = useMemo(
+    () => ({
+      onTime: "Conteo de registros cuya hora de entrada cae dentro de la tolerancia configurada. Porcentaje = A Tiempo / total de registros del periodo.",
+      late: "Conteo de registros con entrada después de la tolerancia y antes o igual al umbral de retardo mayor.",
+      veryLate: "Conteo de registros con entrada posterior al umbral de retardo mayor configurado.",
+      avgHours: "Promedio simple de horas trabajadas por registro del periodo: horas totales / número de registros.",
+      absences: "Suma de días hábiles sin registro. También se muestra una tasa normalizada: inasistencias / (empleados activos base × días hábiles).",
+      weekday: "Distribución de registros por día de semana (lunes a viernes) dentro del periodo y filtros activos.",
+      incidents: "Composición de incidencias por registro (a tiempo, retardo, retardo mayor). El valor central cambia según el filtro diario/mensual/semanal.",
+      employeeSummary: "Resumen agregado por empleado en el periodo: días con registro, incidencias, horas y puntualidad.",
+    }),
+    []
+  );
 
   const PAGE_SIZE_DASHBOARD_EMPLOYEES = 15;
   const PAGE_SIZE_DAILY = 50;
@@ -635,11 +724,17 @@ export default function AttendancePlatform() {
   const PAGE_SIZE_INCIDENTS = 50;
   const PAGE_SIZE_ABSENCES = 100;
 
-  // Derive employees and months dynamically from loaded records
-  const employees = useMemo(
+  const recordEmployees = useMemo(
     () => [...new Set(records.map((r) => r.employee))].sort((a, b) => a.localeCompare(b)),
     [records]
   );
+  const employees = useMemo(() => {
+    const activeNames = [...new Set(activeEmployees.filter((e) => e.isActive).map((e) => e.name.trim()).filter(Boolean))];
+    if (activeNames.length > 0) {
+      return activeNames.sort((a, b) => a.localeCompare(b));
+    }
+    return recordEmployees;
+  }, [activeEmployees, recordEmployees]);
 
   const monthOptions = useMemo(() => {
     const unique = [...new Set(records.map((r) => r.date.slice(0, 7)))].sort();
@@ -758,32 +853,30 @@ export default function AttendancePlatform() {
     }
   }, []);
 
+  const loadActiveEmployees = useCallback(async () => {
+    const { employees: roster } = await getEmployees();
+    setActiveEmployees(
+      roster.map((e) => ({
+        id: e.id,
+        name: e.name,
+        isActive: e.isActive,
+      }))
+    );
+  }, []);
+
   useEffect(() => {
     void loadPersistedRecords().catch(() => {
       // Keep empty state when API is not available.
     });
   }, [loadPersistedRecords]);
 
-  const filteredData = useMemo(() => {
-    let data = records;
-    if (selectedEmployee !== "all") {
-      data = data.filter((r) => r.employee === selectedEmployee);
-    }
-    if (reportPeriod === "month") {
-      if (!selectedMonth) return [];
-      data = data.filter((r) => r.date.startsWith(selectedMonth));
-    } else if (reportPeriod === "week") {
-      const week = weekOptions[selectedWeek];
-      if (!week) return [];
-      data = data.filter((r) => r.date >= week.startDate && r.date <= week.endDate);
-    } else if (reportPeriod === "day") {
-      if (!selectedDay) return [];
-      data = data.filter((r) => r.date === selectedDay);
-    }
-    return data;
-  }, [records, selectedEmployee, reportPeriod, selectedMonth, selectedDay, selectedWeek, weekOptions]);
+  useEffect(() => {
+    void loadActiveEmployees().catch(() => {
+      // Keep fallback to record-derived employees when roster endpoint is unavailable.
+    });
+  }, [loadActiveEmployees]);
 
-  const periodDateRange = useMemo((): { start: string; end: string } | null => {
+  const rawPeriodRange = useMemo((): { start: string; end: string } | null => {
     if (reportPeriod === "month" && selectedMonth) {
       const [year, month] = selectedMonth.split("-").map(Number);
       const firstDay = new Date(year, month - 1, 1);
@@ -799,21 +892,47 @@ export default function AttendancePlatform() {
     return null;
   }, [reportPeriod, selectedMonth, selectedWeek, weekOptions, selectedDay]);
 
+  const periodDateRange = useMemo((): { start: string; end: string } | null => {
+    if (!rawPeriodRange) return null;
+    const cappedEnd = rawPeriodRange.end > todayIso ? todayIso : rawPeriodRange.end;
+    if (rawPeriodRange.start > cappedEnd) return null;
+    return { start: rawPeriodRange.start, end: cappedEnd };
+  }, [rawPeriodRange, todayIso]);
+
+  const filteredData = useMemo(() => {
+    if (!periodDateRange) return [];
+    let data = records.filter((r) => r.date >= periodDateRange.start && r.date <= periodDateRange.end);
+    if (selectedEmployee !== "all") {
+      data = data.filter((r) => r.employee === selectedEmployee);
+    }
+    return data;
+  }, [records, selectedEmployee, periodDateRange]);
+
+  const absenceBaseEmployees = useMemo(() => {
+    if (selectedEmployee !== "all") {
+      return employees.includes(selectedEmployee) ? [selectedEmployee] : [];
+    }
+    return employees;
+  }, [employees, selectedEmployee]);
+
+  const workingDaysInRange = useMemo(() => {
+    if (!periodDateRange) return [];
+    return getWorkingDays(periodDateRange.start, periodDateRange.end);
+  }, [periodDateRange]);
+
   const absenceData = useMemo(() => {
-    if (!periodDateRange || records.length === 0) return [];
-    const workingDays = getWorkingDays(periodDateRange.start, periodDateRange.end);
-    const empList = selectedEmployee === "all" ? employees : [selectedEmployee];
+    if (!periodDateRange || records.length === 0 || absenceBaseEmployees.length === 0) return [];
     const presentSet = new Set(records.map((r) => `${r.employee}|${r.date}`));
     const absences: { employee: string; date: string }[] = [];
-    for (const emp of empList) {
-      for (const day of workingDays) {
+    for (const emp of absenceBaseEmployees) {
+      for (const day of workingDaysInRange) {
         if (!presentSet.has(`${emp}|${day}`)) {
           absences.push({ employee: emp, date: day });
         }
       }
     }
     return absences.sort((a, b) => a.date.localeCompare(b.date) || a.employee.localeCompare(b.employee));
-  }, [records, periodDateRange, selectedEmployee, employees]);
+  }, [records, periodDateRange, absenceBaseEmployees, workingDaysInRange]);
 
   const stats = useMemo(() => {
     let onTime = 0, late = 0, veryLate = 0;
@@ -826,6 +945,8 @@ export default function AttendancePlatform() {
     const uniqueEmployees = new Set(filteredData.map((r) => r.employee)).size;
     const totalHours = filteredData.reduce((sum, r) => sum + r.hoursWorked, 0);
     const avgHours = filteredData.length > 0 ? totalHours / filteredData.length : 0;
+    const absenceDenominator = Math.max(absenceBaseEmployees.length * workingDaysInRange.length, 0);
+    const absenceRatePct = absenceDenominator > 0 ? (absenceData.length / absenceDenominator) * 100 : 0;
     return {
       onTime,
       late,
@@ -835,8 +956,11 @@ export default function AttendancePlatform() {
       totalHours,
       avgHours,
       absences: absenceData.length,
+      absenceRatePct,
+      absenceBaseEmployees: absenceBaseEmployees.length,
+      workingDays: workingDaysInRange.length,
     };
-  }, [filteredData, config, absenceData]);
+  }, [filteredData, config, absenceData, absenceBaseEmployees, workingDaysInRange]);
 
   const employeeReport = useMemo(() => {
     const map: Record<string, { name: string; onTime: number; late: number; veryLate: number; totalHours: number; days: number; absences: number }> = {};
@@ -856,7 +980,7 @@ export default function AttendancePlatform() {
       absenceByEmp[a.employee] = (absenceByEmp[a.employee] || 0) + 1;
     });
     // Include employees that may only have absences (no attendance in period)
-    const empList = selectedEmployee === "all" ? employees : [selectedEmployee];
+    const empList = absenceBaseEmployees;
     for (const emp of empList) {
       if (!map[emp] && absenceByEmp[emp]) {
         map[emp] = { name: emp, onTime: 0, late: 0, veryLate: 0, totalHours: 0, days: 0, absences: 0 };
@@ -864,7 +988,7 @@ export default function AttendancePlatform() {
       if (map[emp]) map[emp].absences = absenceByEmp[emp] ?? 0;
     }
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filteredData, config, absenceData, employees, selectedEmployee]);
+  }, [filteredData, config, absenceData, absenceBaseEmployees]);
 
   const filteredEmployeeReport = useMemo(() => {
     const searchKey = normalizeKey(employeeSearch);
@@ -1169,11 +1293,13 @@ export default function AttendancePlatform() {
         }
         .stat-card {
           position: relative;
-          overflow: hidden;
+          overflow: visible;
+          z-index: 1;
           transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
         }
         .stat-card:hover {
           transform: translateY(-2px);
+          z-index: 5;
           border-color: rgba(99,132,255,0.2);
           box-shadow: 0 8px 32px rgba(99,132,255,0.08);
         }
@@ -1657,43 +1783,58 @@ export default function AttendancePlatform() {
                     <Icons.Calendar />
                     <span style={{ fontSize: 12, color: "#818cf8", fontWeight: 600 }}>{periodLabel}</span>
                   </div>
+                  {periodDateRange && (
+                    <div style={{ fontSize: 11, color: "#5a6580" }}>
+                      Datos hasta hoy • Rango efectivo: {formatDate(periodDateRange.start)} - {formatDate(periodDateRange.end)}
+                    </div>
+                  )}
                 </div>
               )}
               {/* Stats Cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
                 <div className="glass-panel stat-card green" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>A Tiempo</div>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    A Tiempo <HelpTip text={widgetHelp.onTime} />
+                  </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#34d399", fontFamily: "'JetBrains Mono', monospace" }}>{stats.onTime}</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
                     {stats.totalRecords > 0 ? Math.round(stats.onTime / stats.totalRecords * 100) : 0}% de registros
                   </div>
                 </div>
                 <div className="glass-panel stat-card amber" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Retardos</div>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    Retardos <HelpTip text={widgetHelp.late} />
+                  </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#fbbf24", fontFamily: "'JetBrains Mono', monospace" }}>{stats.late}</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
                     {stats.totalRecords > 0 ? Math.round(stats.late / stats.totalRecords * 100) : 0}% de registros
                   </div>
                 </div>
                 <div className="glass-panel stat-card red" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Retardo Mayor</div>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    Retardo Mayor <HelpTip text={widgetHelp.veryLate} />
+                  </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#f87171", fontFamily: "'JetBrains Mono', monospace" }}>{stats.veryLate}</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
                     {">"}{config.lateThresholdMinutes} min después
                   </div>
                 </div>
                 <div className="glass-panel stat-card blue" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Hrs. Promedio</div>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    Hrs. Promedio <HelpTip text={widgetHelp.avgHours} />
+                  </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#818cf8", fontFamily: "'JetBrains Mono', monospace" }}>{stats.avgHours.toFixed(1)}</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
                     hrs/día por persona
                   </div>
                 </div>
                 <div className="glass-panel stat-card purple" style={{ padding: 20 }}>
-                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Inasistencias</div>
+                  <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    Inasistencias <HelpTip text={widgetHelp.absences} />
+                  </div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{stats.absences}</div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
-                    días hábiles sin registro
+                    {stats.absenceRatePct.toFixed(1)}% sobre {stats.absenceBaseEmployees} empleados activos
                   </div>
                 </div>
               </div>
@@ -1702,8 +1843,8 @@ export default function AttendancePlatform() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 28 }}>
                 {/* Bar Chart - Attendance by day of week */}
                 <div className="glass-panel" style={{ padding: 24 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 20 }}>
-                    Asistencia por día de la semana
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                    Asistencia por día de la semana <HelpTip text={widgetHelp.weekday} />
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 12, height: 160, paddingBottom: 24, position: "relative" }}>
                     {weekdayDistribution.map((day, i) => (
@@ -1723,8 +1864,8 @@ export default function AttendancePlatform() {
 
                 {/* Donut-like summary */}
                 <div className="glass-panel" style={{ padding: 24 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 20 }}>
-                    Distribución de Incidencias
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                    Distribución de Incidencias <HelpTip text={widgetHelp.incidents} />
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
                     <div style={{ position: "relative", width: 120, height: 120 }}>
@@ -1774,8 +1915,8 @@ export default function AttendancePlatform() {
               {/* Top Incidents Table */}
               <div className="glass-panel" style={{ padding: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>
-                    Resumen por Empleado
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", display: "flex", alignItems: "center", gap: 8 }}>
+                    Resumen por Empleado <HelpTip text={widgetHelp.employeeSummary} />
                   </div>
                   <button className="btn-ghost" onClick={exportDashboard} disabled={employeeReport.length === 0}><Icons.Download /> Exportar</button>
                 </div>
@@ -2110,12 +2251,14 @@ export default function AttendancePlatform() {
                 <div className="glass-panel stat-card purple" style={{ padding: 20 }}>
                   <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Total Inasistencias</div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#c084fc", fontFamily: "'JetBrains Mono', monospace" }}>{absenceData.length}</div>
-                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>días hábiles sin registro · {periodLabel}</div>
+                  <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>
+                    {stats.absenceRatePct.toFixed(1)}% de ausentismo · {periodLabel}
+                  </div>
                 </div>
                 <div className="glass-panel stat-card blue" style={{ padding: 20 }}>
                   <div style={{ fontSize: 11, color: "#5a6580", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>Días Hábiles del Período</div>
                   <div style={{ fontSize: 32, fontWeight: 700, color: "#818cf8", fontFamily: "'JetBrains Mono', monospace" }}>
-                    {periodDateRange ? getWorkingDays(periodDateRange.start, periodDateRange.end).length : 0}
+                    {stats.workingDays}
                   </div>
                   <div style={{ fontSize: 12, color: "#5a6580", marginTop: 4 }}>Lunes a Viernes</div>
                 </div>
@@ -2203,7 +2346,7 @@ export default function AttendancePlatform() {
                       </thead>
                       <tbody>
                         {(() => {
-                          const totalWD = periodDateRange ? getWorkingDays(periodDateRange.start, periodDateRange.end).length : 0;
+                          const totalWD = stats.workingDays;
                           const byEmp: Record<string, number> = {};
                           absenceData.forEach((a) => { byEmp[a.employee] = (byEmp[a.employee] || 0) + 1; });
                           return Object.entries(byEmp)

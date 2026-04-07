@@ -10,6 +10,13 @@ export type ApiAttendanceRecord = {
   hoursWorked: number;
 };
 
+export type ApiEmployee = {
+  id: number;
+  name: string;
+  employeeCode: string | null;
+  isActive: boolean;
+};
+
 export type ImportPayload = {
   fileName: string;
   sourceType: "xlsx" | "csv";
@@ -64,6 +71,10 @@ export async function getRecords(params?: { from?: string; to?: string; employee
   if (params?.employee) q.set("employee", params.employee);
   const suffix = q.toString() ? `?${q.toString()}` : "";
   return request<{ records: ApiAttendanceRecord[]; period: { from: string; to: string } }>(`/api/records${suffix}`);
+}
+
+export async function getEmployees() {
+  return request<{ employees: ApiEmployee[] }>("/api/employees");
 }
 
 export async function postImport(payload: ImportPayload) {

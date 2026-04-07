@@ -7,7 +7,8 @@ class EmployeesController extends BaseApiController
     public function index()
     {
         $rows = model(\App\Models\EmployeeModel::class)
-            ->select('id, name, employee_code')
+            ->select('id, name, employee_code, is_active')
+            ->where('is_active', 1)
             ->orderBy('name', 'ASC')
             ->findAll();
 
@@ -16,6 +17,7 @@ class EmployeesController extends BaseApiController
                 'id' => (int) $r['id'],
                 'name' => (string) $r['name'],
                 'employeeCode' => $r['employee_code'] ?: null,
+                'isActive' => (int) ($r['is_active'] ?? 1) === 1,
             ], $rows),
         ]);
     }
