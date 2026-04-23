@@ -30,6 +30,16 @@ $routes->group('api', ['filter' => 'cors'], static function ($routes): void {
             $routes->get('summary', 'Api\AttendanceController::summary');
             $routes->get('incidents', 'Api\AttendanceController::incidents');
             $routes->get('absences', 'Api\AttendanceController::absences');
+
+            // Módulo Vacaciones/Ausencias tipificadas (Sprint 1)
+            $routes->get('absence-types', 'Api\AbsenceTypesController::index');
+            $routes->get('absences-typed', 'Api\AttendanceController::absencesTyped');
+            $routes->get('employee-absences', 'Api\AbsencesController::list');
+            $routes->post('employee-absences', 'Api\AbsencesController::create');
+            $routes->post('employee-absences/(:num)/approve', 'Api\AbsencesController::approve/$1');
+            $routes->post('employee-absences/(:num)/reject', 'Api\AbsencesController::reject/$1');
+            $routes->post('employee-absences/(:num)/cancel', 'Api\AbsencesController::cancel/$1');
+
             $routes->get('settings', 'Api\SettingsController::show');
             $routes->put('settings', 'Api\SettingsController::update');
             $routes->post('import', 'Api\ImportController::store');

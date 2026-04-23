@@ -139,6 +139,22 @@ class AttendanceController extends BaseApiController
         }
     }
 
+    public function absencesTyped()
+    {
+        try {
+            [$from, $to] = $this->resolveRange();
+            $employee = trim((string) $this->request->getGet('employee'));
+            $nameFilter = ($employee !== '' && strtolower($employee) !== 'all') ? $employee : null;
+
+            $service = new AbsenceExpectationService();
+            $result = $service->computeTypedAbsences($from, $to, $nameFilter);
+
+            return $this->respond($result + ['period' => ['from' => $from, 'to' => $to]]);
+        } catch (Throwable $e) {
+            return $this->failServerError('No se pudo resolver estado tipificado: ' . $e->getMessage());
+        }
+    }
+
     private function resolveRange(): array
     {
         $db = db_connect();

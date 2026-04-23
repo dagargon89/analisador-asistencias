@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { getAbsences, getEmployees, getRecords, getSettings, postChat, postImport, updateSettings } from "./api";
 import { useAuth } from "./auth/AuthContext";
 import { useTheme } from "./theme/ThemeContext";
+import { AbsencesPanel } from "./modules/absences/AbsencesPanel";
 
 // --- Types ---
 type EntryStatus = "ontime" | "late" | "verylate";
@@ -2077,6 +2078,7 @@ export default function AttendancePlatform() {
             { id: "lateAccumulation", icon: <Icons.Clock />, label: "Retardos Acumulados" },
             { id: "incidents", icon: <Icons.Alert />, label: "Incidencias" },
             { id: "absences", icon: <Icons.UserX />, label: "Inasistencias" },
+            { id: "leaveAbsences", icon: <Icons.Calendar />, label: "Vacaciones y Ausencias" },
           ].map(item => (
             <button
               key={item.id}
@@ -2945,6 +2947,32 @@ export default function AttendancePlatform() {
                 </div>
               )}
             </>
+          )}
+
+          {/* LEAVE / ABSENCES (Sprint 1 — Módulo Vacaciones y Ausencias) */}
+          {activeTab === "leaveAbsences" && (
+            <div className="glass-panel" style={{ padding: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>Vacaciones y Ausencias</div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
+                    Registro tipificado con cinco estados · Catálogo de ausencias LFT · {periodLabel}
+                  </div>
+                </div>
+              </div>
+              {periodDateRange ? (
+                <AbsencesPanel
+                  from={periodDateRange.start}
+                  to={periodDateRange.end}
+                  employees={activeEmployees}
+                  selectedEmployee={selectedEmployee}
+                />
+              ) : (
+                <div style={{ textAlign: "center", padding: "40px 0", color: "var(--color-text-muted)", fontSize: 14 }}>
+                  Selecciona un período para visualizar ausencias.
+                </div>
+              )}
+            </div>
           )}
 
           {/* DATABASE VIEW */}
