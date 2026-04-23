@@ -33,13 +33,13 @@ class AbsenceResolver
      *   meta: array{definition:string, from:string, to:string}
      * }
      */
-    public function resolveRange(string $from, string $to, ?array $employees = null): array
+    public function resolveRange(string $from, string $to, ?array $employees = null, ?int $organizationId = null): array
     {
         $weekdays = $this->listWeekdays($from, $to);
         $blocked = $this->loadBlockedDates($from, $to);
         $workdays = array_values(array_filter($weekdays, static fn(string $d): bool => !isset($blocked[$d])));
 
-        $employees ??= $this->loadActiveEmployees();
+        $employees ??= $this->loadActiveEmployees($organizationId);
         $present = $this->loadPresentSet($from, $to);
         $approvedAbsences = $this->loadApprovedAbsencesByEmployee($from, $to);
 
@@ -150,13 +150,18 @@ class AbsenceResolver
     }
 
     /** @return list<array{id:int,name:string,hire_date:?string,termination_date:?string}> */
-    private function loadActiveEmployees(): array
+    private function loadActiveEmployees(?int $organizationId = null): array
     {
-        $rows = $this->db->table('employees')
+        $builder = $this->db->table('employees')
             ->select('id, name, hire_date, termination_date')
             ->where('is_active', 1)
-            ->orderBy('name', 'ASC')
-            ->get()->getResultArray();
+            ->orderBy('name', 'ASC');
+
+        if ($organizationId !== null && $this->db->fieldExists('organization_id', 'employees')) {
+            $builder->where('organization_id', $organizationId);
+        }
+
+        $rows = $builder->get()->getResultArray();
 
         return array_map(static fn(array $r): array => [
             'id' => (int) $r['id'],

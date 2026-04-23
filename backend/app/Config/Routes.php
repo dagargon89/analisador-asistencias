@@ -40,6 +40,20 @@ $routes->group('api', ['filter' => 'cors'], static function ($routes): void {
             $routes->post('employee-absences/(:num)/reject', 'Api\AbsencesController::reject/$1');
             $routes->post('employee-absences/(:num)/cancel', 'Api\AbsencesController::cancel/$1');
 
+            // Saldos de vacaciones LFT (Sprint 2)
+            $routes->get('leave-balances', 'Api\LeaveBalancesController::show');
+            $routes->post('leave-balances/recalc', 'Api\LeaveBalancesController::recalc');
+
+            // Reporte quincenal (Sprint 3)
+            $routes->get('payroll-periods', 'Api\PayrollReportController::listPeriods');
+            $routes->post('payroll-periods/generate', 'Api\PayrollReportController::generatePeriods');
+            $routes->get('payroll-report/(:num)', 'Api\PayrollReportController::show/$1');
+            $routes->get('payroll-report/(:num)/xlsx', 'Api\PayrollReportController::exportXlsx/$1');
+            $routes->post('payroll-periods/(:num)/close', 'Api\PayrollReportController::closePeriod/$1');
+
+            // Multi-organización (Sprint 4)
+            $routes->get('organizations', 'Api\OrganizationsController::index');
+
             $routes->get('settings', 'Api\SettingsController::show');
             $routes->put('settings', 'Api\SettingsController::update');
             $routes->post('import', 'Api\ImportController::store');

@@ -341,3 +341,12 @@
 .abs-cell--unjustified {
   background: #eb5757;
 }
+
+.abs-balance-hint {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(47, 128, 237, 0.1);
+  border: 1px solid rgba(47, 128, 237, 0.25);
+  color: #2f80ed;
+  font-size: 12px;
+}

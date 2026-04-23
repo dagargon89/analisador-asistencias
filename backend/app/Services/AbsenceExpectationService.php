@@ -154,17 +154,20 @@ class AbsenceExpectationService
      *
      * @return array<string,mixed>
      */
-    public function computeTypedAbsences(string $from, string $to, ?string $employeeName = null): array
+    public function computeTypedAbsences(string $from, string $to, ?string $employeeName = null, ?int $organizationId = null): array
     {
         $filter = $this->normalizeEmployeeFilter($employeeName);
 
         $employees = null;
         if ($filter !== null) {
-            $row = $this->db->table('employees')
+            $builder = $this->db->table('employees')
                 ->select('id, name, hire_date, termination_date')
                 ->where('is_active', 1)
-                ->where('name', $filter)
-                ->get()->getFirstRow('array');
+                ->where('name', $filter);
+            if ($organizationId !== null && $this->db->fieldExists('organization_id', 'employees')) {
+                $builder->where('organization_id', $organizationId);
+            }
+            $row = $builder->get()->getFirstRow('array');
             $employees = $row ? [[
                 'id' => (int) $row['id'],
                 'name' => (string) $row['name'],
@@ -173,7 +176,7 @@ class AbsenceExpectationService
             ]] : [];
         }
 
-        return $this->resolver->resolveRange($from, $to, $employees);
+        return $this->resolver->resolveRange($from, $to, $employees, $organizationId);
     }
 
     /**

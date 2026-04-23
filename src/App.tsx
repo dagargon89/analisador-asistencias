@@ -4,6 +4,9 @@ import { getAbsences, getEmployees, getRecords, getSettings, postChat, postImpor
 import { useAuth } from "./auth/AuthContext";
 import { useTheme } from "./theme/ThemeContext";
 import { AbsencesPanel } from "./modules/absences/AbsencesPanel";
+import { LeaveBalancePanel } from "./modules/absences/LeaveBalancePanel";
+import { TypedAttendanceDashboard } from "./modules/absences/TypedAttendanceDashboard";
+import { PayrollPeriodsPanel } from "./modules/payroll/PayrollPeriodsPanel";
 
 // --- Types ---
 type EntryStatus = "ontime" | "late" | "verylate";
@@ -2949,30 +2952,14 @@ export default function AttendancePlatform() {
             </>
           )}
 
-          {/* LEAVE / ABSENCES (Sprint 1 — Módulo Vacaciones y Ausencias) */}
+          {/* LEAVE / ABSENCES — Módulo completo (Sprints 1-4) */}
           {activeTab === "leaveAbsences" && (
-            <div className="glass-panel" style={{ padding: 24 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>Vacaciones y Ausencias</div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
-                    Registro tipificado con cinco estados · Catálogo de ausencias LFT · {periodLabel}
-                  </div>
-                </div>
-              </div>
-              {periodDateRange ? (
-                <AbsencesPanel
-                  from={periodDateRange.start}
-                  to={periodDateRange.end}
-                  employees={activeEmployees}
-                  selectedEmployee={selectedEmployee}
-                />
-              ) : (
-                <div style={{ textAlign: "center", padding: "40px 0", color: "var(--color-text-muted)", fontSize: 14 }}>
-                  Selecciona un período para visualizar ausencias.
-                </div>
-              )}
-            </div>
+            <LeaveAbsencesSection
+              periodDateRange={periodDateRange}
+              periodLabel={periodLabel}
+              activeEmployees={activeEmployees}
+              selectedEmployee={selectedEmployee}
+            />
           )}
 
           {/* DATABASE VIEW */}
@@ -3511,6 +3498,98 @@ sin importar mayúsculas o tildes.`}</pre>
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+type LeaveAbsencesEmployee = { id: number; name: string; isActive: boolean };
+
+function LeaveAbsencesSection({
+  periodDateRange,
+  periodLabel,
+  activeEmployees,
+  selectedEmployee,
+}: {
+  periodDateRange: { start: string; end: string } | null;
+  periodLabel: string;
+  activeEmployees: LeaveAbsencesEmployee[];
+  selectedEmployee: string;
+}) {
+  const [section, setSection] = useState<"requests" | "balances" | "periods" | "dashboard">("requests");
+
+  const tabs: { id: typeof section; label: string }[] = [
+    { id: "requests", label: "Registro y calendario" },
+    { id: "balances", label: "Saldos LFT" },
+    { id: "periods", label: "Quincenas y reporte" },
+    { id: "dashboard", label: "Dashboard" },
+  ];
+
+  return (
+    <div className="glass-panel" style={{ padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>Vacaciones y Ausencias</div>
+          <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
+            Cinco estados · LFT 2023 · Reporte quincenal · {periodLabel}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", borderBottom: "1px solid rgba(99,132,255,0.12)" }}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setSection(t.id)}
+            style={{
+              padding: "8px 14px",
+              fontSize: 13,
+              fontWeight: 600,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              color: section === t.id ? "#2f80ed" : "var(--color-text-muted)",
+              borderBottom: section === t.id ? "2px solid #2f80ed" : "2px solid transparent",
+              marginBottom: -1,
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {section === "requests" && (
+        periodDateRange ? (
+          <AbsencesPanel
+            from={periodDateRange.start}
+            to={periodDateRange.end}
+            employees={activeEmployees}
+            selectedEmployee={selectedEmployee}
+          />
+        ) : (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "var(--color-text-muted)", fontSize: 14 }}>
+            Selecciona un período para visualizar ausencias.
+          </div>
+        )
+      )}
+
+      {section === "balances" && <LeaveBalancePanel employees={activeEmployees} />}
+
+      {section === "periods" && <PayrollPeriodsPanel />}
+
+      {section === "dashboard" && (
+        periodDateRange ? (
+          <TypedAttendanceDashboard
+            from={periodDateRange.start}
+            to={periodDateRange.end}
+            employee={selectedEmployee !== "all" ? selectedEmployee : undefined}
+          />
+        ) : (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "var(--color-text-muted)", fontSize: 14 }}>
+            Selecciona un período para visualizar el dashboard.
+          </div>
+        )
       )}
     </div>
   );

@@ -404,9 +404,11 @@ export async function getTypedAbsences(params: {
   from: string;
   to: string;
   employee?: string;
+  organizationId?: number;
 }): Promise<{ days: TypedDay[]; summary: TypedAbsencesSummary; period: { from: string; to: string } }> {
   const q = new URLSearchParams({ from: params.from, to: params.to });
   if (params.employee && params.employee !== "all") q.set("employee", params.employee);
+  if (params.organizationId) q.set("organization_id", String(params.organizationId));
   const data = await request<{
     days: ApiTypedDayRow[];
     summary: TypedAbsencesSummary;
@@ -417,5 +419,237 @@ export async function getTypedAbsences(params: {
     summary: data.summary ?? { expected: 0, present: 0, justifiedWorked: 0, justifiedUnpaid: 0, unjustified: 0 },
     period: data.period,
   };
+}
+
+// =============================================================================
+// Sprint 2 — Saldos de vacaciones LFT
+// =============================================================================
+
+export type LeaveBalance = {
+  id: number;
+  employeeId: number;
+  anniversaryYear: number;
+  yearsOfService: number;
+  entitledDays: number;
+  usedDays: number;
+  carriedOverDays: number;
+  primaVacacionalDays: number;
+  periodStart: string;
+  periodEnd: string;
+  expirationDate: string;
+  availableDays: number;
+};
+
+type ApiLeaveBalance = {
+  id: number | string;
+  employee_id: number | string;
+  anniversary_year: number | string;
+  years_of_service: number | string;
+  entitled_days: number | string;
+  used_days: number | string;
+  carried_over_days: number | string;
+  prima_vacacional_days: number | string;
+  period_start: string;
+  period_end: string;
+  expiration_date: string;
+  available_days?: number | string;
+};
+
+function normalizeLeaveBalance(r: ApiLeaveBalance): LeaveBalance {
+  const entitled = Number(r.entitled_days);
+  const carried = Number(r.carried_over_days ?? 0);
+  const used = Number(r.used_days);
+  return {
+    id: Number(r.id),
+    employeeId: Number(r.employee_id),
+    anniversaryYear: Number(r.anniversary_year),
+    yearsOfService: Number(r.years_of_service),
+    entitledDays: entitled,
+    usedDays: used,
+    carriedOverDays: carried,
+    primaVacacionalDays: Number(r.prima_vacacional_days),
+    periodStart: r.period_start,
+    periodEnd: r.period_end,
+    expirationDate: r.expiration_date,
+    availableDays: r.available_days !== undefined ? Number(r.available_days) : Math.max(0, entitled + carried - used),
+  };
+}
+
+export async function getLeaveBalance(params: { employeeId: number; asOf?: string }): Promise<LeaveBalance | null> {
+  const q = new URLSearchParams({ employee_id: String(params.employeeId) });
+  if (params.asOf) q.set("as_of", params.asOf);
+  const data = await request<{ balance: ApiLeaveBalance | null }>(`/api/leave-balances?${q.toString()}`);
+  return data.balance ? normalizeLeaveBalance(data.balance) : null;
+}
+
+export async function recalcLeaveBalances(asOf?: string): Promise<{ recalculated: number }> {
+  return request<{ recalculated: number }>("/api/leave-balances/recalc", {
+    method: "POST",
+    body: JSON.stringify(asOf ? { as_of: asOf } : {}),
+  });
+}
+
+// =============================================================================
+// Sprint 3 — Periodos quincenales + reporte XLSX
+// =============================================================================
+
+export type PayrollPeriodStatus = "open" | "closed";
+
+export type PayrollPeriod = {
+  id: number;
+  label: string;
+  startDate: string;
+  endDate: string;
+  expectedCalendarDays: number;
+  status: PayrollPeriodStatus;
+  closedAt: string | null;
+};
+
+type ApiPayrollPeriod = {
+  id: number | string;
+  label: string;
+  start_date: string;
+  end_date: string;
+  expected_calendar_days: number | string;
+  status: PayrollPeriodStatus;
+  closed_at: string | null;
+};
+
+function normalizePayrollPeriod(r: ApiPayrollPeriod): PayrollPeriod {
+  return {
+    id: Number(r.id),
+    label: r.label,
+    startDate: r.start_date,
+    endDate: r.end_date,
+    expectedCalendarDays: Number(r.expected_calendar_days),
+    status: r.status,
+    closedAt: r.closed_at,
+  };
+}
+
+export async function getPayrollPeriods(year: number): Promise<PayrollPeriod[]> {
+  const data = await request<{ periods: ApiPayrollPeriod[] }>(`/api/payroll-periods?year=${year}`);
+  return (data.periods ?? []).map(normalizePayrollPeriod);
+}
+
+export async function generatePayrollPeriods(year: number): Promise<{ inserted: number; year: number }> {
+  return request<{ inserted: number; year: number }>("/api/payroll-periods/generate", {
+    method: "POST",
+    body: JSON.stringify({ year }),
+  });
+}
+
+export async function closePayrollPeriod(id: number): Promise<{ id: number; status: PayrollPeriodStatus }> {
+  return request<{ id: number; status: PayrollPeriodStatus }>(`/api/payroll-periods/${id}/close`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export type PayrollReportRow = {
+  employeeId: number;
+  employeeName: string;
+  employeeCode: string;
+  hireDate: string | null;
+  department: string;
+  daysWorked: number;
+  vacationDays: number;
+  leaveDays: number;
+  unjustifiedAbsences: number;
+  justifiedUnpaidDays: number;
+  presentDays: number;
+  observations: string;
+};
+
+type ApiPayrollReportRow = {
+  employee_id: number | string;
+  employee_name: string;
+  employee_code: string;
+  hire_date: string | null;
+  department: string;
+  days_worked: number | string;
+  vacation_days: number | string;
+  leave_days: number | string;
+  unjustified_absences: number | string;
+  justified_unpaid_days: number | string;
+  present_days: number | string;
+  observations: string;
+};
+
+export type PayrollReport = {
+  period: PayrollPeriod;
+  rows: PayrollReportRow[];
+  totals: Record<string, number>;
+};
+
+export async function getPayrollReport(periodId: number): Promise<PayrollReport> {
+  const data = await request<{ period: ApiPayrollPeriod; rows: ApiPayrollReportRow[]; totals: Record<string, number> }>(
+    `/api/payroll-report/${periodId}`
+  );
+  return {
+    period: normalizePayrollPeriod(data.period),
+    rows: (data.rows ?? []).map((r) => ({
+      employeeId: Number(r.employee_id),
+      employeeName: r.employee_name,
+      employeeCode: r.employee_code,
+      hireDate: r.hire_date,
+      department: r.department,
+      daysWorked: Number(r.days_worked),
+      vacationDays: Number(r.vacation_days),
+      leaveDays: Number(r.leave_days),
+      unjustifiedAbsences: Number(r.unjustified_absences),
+      justifiedUnpaidDays: Number(r.justified_unpaid_days),
+      presentDays: Number(r.present_days),
+      observations: r.observations,
+    })),
+    totals: data.totals ?? {},
+  };
+}
+
+export async function downloadPayrollReportXlsx(periodId: number): Promise<Blob> {
+  const doFetch = async () => {
+    const { accessToken } = getAuthState();
+    const headers: Record<string, string> = {};
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    return fetch(`${API_BASE}/api/payroll-report/${periodId}/xlsx`, { headers });
+  };
+  let res = await doFetch();
+  if (res.status === 401) {
+    const refreshed = await refreshTokens();
+    if (refreshed) res = await doFetch();
+  }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(txt || `HTTP ${res.status}`);
+  }
+  return await res.blob();
+}
+
+// =============================================================================
+// Sprint 4 — Organizaciones
+// =============================================================================
+
+export type Organization = {
+  id: number;
+  code: string;
+  name: string;
+  isActive: boolean;
+};
+
+type ApiOrganization = {
+  id: number | string;
+  code: string;
+  name: string;
+  is_active: number | string;
+};
+
+export async function getOrganizations(): Promise<Organization[]> {
+  const data = await request<{ organizations: ApiOrganization[] }>("/api/organizations");
+  return (data.organizations ?? []).map((o) => ({
+    id: Number(o.id),
+    code: o.code,
+    name: o.name,
+    isActive: Number(o.is_active) === 1,
+  }));
 }
 

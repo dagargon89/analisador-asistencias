@@ -145,9 +145,11 @@ class AttendanceController extends BaseApiController
             [$from, $to] = $this->resolveRange();
             $employee = trim((string) $this->request->getGet('employee'));
             $nameFilter = ($employee !== '' && strtolower($employee) !== 'all') ? $employee : null;
+            $orgIdRaw = $this->request->getGet('organization_id');
+            $organizationId = is_string($orgIdRaw) && ctype_digit($orgIdRaw) ? (int) $orgIdRaw : null;
 
             $service = new AbsenceExpectationService();
-            $result = $service->computeTypedAbsences($from, $to, $nameFilter);
+            $result = $service->computeTypedAbsences($from, $to, $nameFilter, $organizationId);
 
             return $this->respond($result + ['period' => ['from' => $from, 'to' => $to]]);
         } catch (Throwable $e) {

@@ -1,7 +1,22 @@
-import { useActionState, useEffect, useRef } from "react";
-import { createEmployeeAbsence } from "../../api";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
+import { createEmployeeAbsence, getLeaveBalance, type LeaveBalance } from "../../api";
 import { useAbsenceTypes } from "./useAbsenceTypes";
 import styles from "./absences.module.css";
+
+const absenceFormSchema = z
+  .object({
+    employeeId: z.coerce.number().int().positive("Empleado obligatorio"),
+    absenceTypeId: z.coerce.number().int().positive("Tipo de ausencia obligatorio"),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "Fecha inválida"),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "Fecha inválida"),
+    reason: z.string().max(500, "Máximo 500 caracteres").optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .refine((data) => data.startDate <= data.endDate, {
+    message: "La fecha de inicio no puede ser mayor que la de fin.",
+    path: ["endDate"],
+  });
 
 type Employee = { id: number; name: string };
 
@@ -22,29 +37,19 @@ export function AbsenceFormDialog({ open, onClose, onCreated, employees }: Props
 
   const [state, submitAction, pending] = useActionState<FormState, FormData>(
     async (_prev, formData) => {
-      const employeeIdRaw = formData.get("employeeId");
-      const absenceTypeIdRaw = formData.get("absenceTypeId");
-      const startDate = String(formData.get("startDate") ?? "");
-      const endDate = String(formData.get("endDate") ?? "");
-      const reason = String(formData.get("reason") ?? "").trim();
-      const notes = String(formData.get("notes") ?? "").trim();
-
-      if (!employeeIdRaw || !absenceTypeIdRaw || !startDate || !endDate) {
-        return { ok: false, error: "Todos los campos obligatorios deben llenarse." };
+      const parsed = absenceFormSchema.safeParse({
+        employeeId: formData.get("employeeId"),
+        absenceTypeId: formData.get("absenceTypeId"),
+        startDate: formData.get("startDate"),
+        endDate: formData.get("endDate"),
+        reason: String(formData.get("reason") ?? "").trim() || undefined,
+        notes: String(formData.get("notes") ?? "").trim() || undefined,
+      });
+      if (!parsed.success) {
+        return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
       }
-      if (startDate > endDate) {
-        return { ok: false, error: "La fecha de inicio no puede ser mayor que la de fin." };
-      }
-
       try {
-        const res = await createEmployeeAbsence({
-          employeeId: Number(employeeIdRaw),
-          absenceTypeId: Number(absenceTypeIdRaw),
-          startDate,
-          endDate,
-          reason: reason || undefined,
-          notes: notes || undefined,
-        });
+        const res = await createEmployeeAbsence(parsed.data);
         onCreated(res.id);
         return { ok: true, error: null };
       } catch (e) {
@@ -53,6 +58,35 @@ export function AbsenceFormDialog({ open, onClose, onCreated, employees }: Props
     },
     INITIAL_STATE,
   );
+
+  const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
+  const [selectedType, setSelectedType] = useState<number | null>(null);
+  const [startDate, setStartDate] = useState("");
+  const [balance, setBalance] = useState<LeaveBalance | null>(null);
+
+  const selectedTypeInfo = useMemo(
+    () => types.find((t) => t.id === selectedType) ?? null,
+    [types, selectedType],
+  );
+
+  useEffect(() => {
+    if (!open || !selectedEmployee || !selectedTypeInfo?.affectsLeaveBalance) {
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        const b = await getLeaveBalance({ employeeId: selectedEmployee, asOf: startDate || undefined });
+        if (active) setBalance(b);
+      } catch {
+        if (active) setBalance(null);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open, selectedEmployee, selectedTypeInfo, startDate]);
+
 
   useEffect(() => {
     if (!open) return;
@@ -82,7 +116,12 @@ export function AbsenceFormDialog({ open, onClose, onCreated, employees }: Props
         <form action={submitAction} className={styles["abs-modal__form"]}>
           <label className={styles["abs-modal__field"]}>
             Empleado
-            <select name="employeeId" required defaultValue="">
+            <select
+              name="employeeId"
+              required
+              defaultValue=""
+              onChange={(e) => setSelectedEmployee(e.target.value ? Number(e.target.value) : null)}
+            >
               <option value="" disabled>Seleccionar...</option>
               {employees.map((e) => (
                 <option key={e.id} value={e.id}>{e.name}</option>
@@ -92,7 +131,13 @@ export function AbsenceFormDialog({ open, onClose, onCreated, employees }: Props
 
           <label className={styles["abs-modal__field"]}>
             Tipo de ausencia
-            <select name="absenceTypeId" required disabled={typesLoading} defaultValue="">
+            <select
+              name="absenceTypeId"
+              required
+              disabled={typesLoading}
+              defaultValue=""
+              onChange={(e) => setSelectedType(e.target.value ? Number(e.target.value) : null)}
+            >
               <option value="" disabled>
                 {typesLoading ? "Cargando..." : "Seleccionar..."}
               </option>
@@ -102,10 +147,16 @@ export function AbsenceFormDialog({ open, onClose, onCreated, employees }: Props
             </select>
           </label>
 
+          {balance && selectedTypeInfo?.affectsLeaveBalance && (
+            <div className={styles["abs-balance-hint"]}>
+              Saldo disponible: <b>{balance.availableDays.toFixed(2)} días</b> (de {balance.entitledDays} otorgados, {balance.usedDays} usados).
+            </div>
+          )}
+
           <div className={styles["abs-modal__row"]}>
             <label className={styles["abs-modal__field"]}>
               Fecha inicio
-              <input type="date" name="startDate" required />
+              <input type="date" name="startDate" required onChange={(e) => setStartDate(e.target.value)} />
             </label>
             <label className={styles["abs-modal__field"]}>
               Fecha fin
