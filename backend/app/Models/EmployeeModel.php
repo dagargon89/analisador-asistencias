@@ -11,7 +11,7 @@ class EmployeeModel extends Model
     protected $returnType       = 'array';
     protected $useAutoIncrement = true;
     protected $protectFields    = true;
-    protected $allowedFields    = ['name', 'employee_code', 'is_active'];
+    protected $allowedFields    = ['name', 'employee_code', 'is_active', 'hire_date', 'termination_date'];
     protected bool $allowEmptyInserts = false;
     protected bool $updateOnlyChanged = true;
 

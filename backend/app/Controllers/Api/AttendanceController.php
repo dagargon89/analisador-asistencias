@@ -2,9 +2,7 @@
 
 namespace App\Controllers\Api;
 
-use DateInterval;
-use DatePeriod;
-use DateTimeImmutable;
+use App\Services\AbsenceExpectationService;
 use Throwable;
 
 class AttendanceController extends BaseApiController
@@ -126,36 +124,15 @@ class AttendanceController extends BaseApiController
         try {
             [$from, $to] = $this->resolveRange();
             $employee = trim((string) $this->request->getGet('employee'));
-            $db = db_connect();
+            $nameFilter = ($employee !== '' && strtolower($employee) !== 'all') ? $employee : null;
 
-            $employeesBuilder = $db->table('employees')->select('id, name')->orderBy('name', 'ASC');
-            if ($employee !== '' && $employee !== 'all') {
-                $employeesBuilder->where('name', $employee);
-            }
-            $employees = $employeesBuilder->get()->getResultArray();
-
-            $attendanceRows = $this->queryAttendanceRows($from, $to, $employee);
-            $presentMap = [];
-            foreach ($attendanceRows as $row) {
-                $presentMap[$row['employee_id'] . '|' . $row['work_date']] = true;
-            }
-
-            $workdays = $this->workingDays($from, $to);
-            $absences = [];
-            foreach ($employees as $emp) {
-                foreach ($workdays as $day) {
-                    if (!isset($presentMap[$emp['id'] . '|' . $day])) {
-                        $absences[] = [
-                            'employee' => (string) $emp['name'],
-                            'date' => $day,
-                        ];
-                    }
-                }
-            }
+            $service = new AbsenceExpectationService();
+            $result = $service->computeAbsences($from, $to, $nameFilter);
 
             return $this->respond([
-                'absences' => $absences,
+                'absences' => $result['absences'],
                 'period' => ['from' => $from, 'to' => $to],
+                'meta' => $result['meta'],
             ]);
         } catch (Throwable $e) {
             return $this->failServerError('No se pudieron calcular inasistencias: ' . $e->getMessage());
@@ -203,21 +180,6 @@ class AttendanceController extends BaseApiController
         }
 
         return $builder->get()->getResultArray();
-    }
-
-    private function workingDays(string $from, string $to): array
-    {
-        $start = new DateTimeImmutable($from);
-        $end = (new DateTimeImmutable($to))->add(new DateInterval('P1D'));
-        $period = new DatePeriod($start, new DateInterval('P1D'), $end);
-        $days = [];
-        foreach ($period as $date) {
-            $dow = (int) $date->format('N');
-            if ($dow >= 1 && $dow <= 5) {
-                $days[] = $date->format('Y-m-d');
-            }
-        }
-        return $days;
     }
 }
 

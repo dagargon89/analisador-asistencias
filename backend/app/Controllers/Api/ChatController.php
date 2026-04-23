@@ -2,10 +2,8 @@
 
 namespace App\Controllers\Api;
 
+use App\Services\AbsenceExpectationService;
 use App\Services\GeminiChatService;
-use DateInterval;
-use DatePeriod;
-use DateTimeImmutable;
 use Throwable;
 
 class ChatController extends BaseApiController
@@ -52,19 +50,39 @@ class ChatController extends BaseApiController
     private function buildContext(string $from, string $to, string $employee): string
     {
         $db = db_connect();
+        $nameFilter = ($employee !== '' && strtolower($employee) !== 'all') ? $employee : null;
+        $service = new AbsenceExpectationService($db);
+        $absenceResult = $service->computeAbsences($from, $to, $nameFilter);
+
         $builder = $db->table('attendance_records ar')
             ->select('ar.work_date, ar.hours_worked, ar.status, e.name')
             ->join('employees e', 'e.id = ar.employee_id', 'inner')
             ->where('ar.work_date >=', $from)
             ->where('ar.work_date <=', $to);
 
-        if ($employee !== '' && $employee !== 'all') {
-            $builder->where('e.name', $employee);
+        if ($nameFilter !== null) {
+            $builder->where('e.name', $nameFilter);
         }
 
         $rows = $builder->get()->getResultArray();
+
+        $lines = [];
+        $lines[] = "Periodo: {$from} a {$to}";
+        $lines[] = 'Motor inasistencias: ' . AbsenceExpectationService::DEFINITION_ID;
+        $meta = $absenceResult['meta'];
+        $lines[] = 'Días hábiles (lun–vie) en rango: ' . $meta['weekdayDaysInRange'];
+        $lines[] = 'Días inhábiles de calendario excluidos: ' . $meta['calendarDaysExcluded'];
+        $lines[] = 'Días laborales tras calendario: ' . $meta['workingDaysAfterCalendar'];
+        $lines[] = 'Espacios esperados (empleado-día con contrato vigente): ' . $meta['expectedAttendanceSlots'];
+        $lines[] = 'Inasistencias (sin registro ese día): ' . $meta['absenceSlots'];
+
         if ($rows === []) {
-            return "Periodo {$from} a {$to}. No hay registros cargados.";
+            $lines[] = '';
+            $lines[] = 'No hay registros de asistencia en el periodo filtrado.';
+            $lines[] = 'Inasistencias por empleado (activos, motor unificado):';
+            $this->appendAbsenceLines($lines, $absenceResult['byEmployee'], 40);
+
+            return implode("\n", $lines);
         }
 
         $onTime = 0;
@@ -72,7 +90,6 @@ class ChatController extends BaseApiController
         $veryLate = 0;
         $hours = 0.0;
         $employeeStats = [];
-        $present = [];
 
         foreach ($rows as $r) {
             $status = (string) $r['status'];
@@ -93,7 +110,6 @@ class ChatController extends BaseApiController
                 $employeeStats[$name]['veryLate']++;
             }
             $employeeStats[$name]['hours'] += (float) $r['hours_worked'];
-            $present[$name . '|' . $r['work_date']] = true;
         }
 
         uasort($employeeStats, static function (array $a, array $b): int {
@@ -102,37 +118,52 @@ class ChatController extends BaseApiController
             if ($scoreA === $scoreB) {
                 return $b['days'] <=> $a['days'];
             }
+
             return $scoreA <=> $scoreB;
         });
-        $lines = [];
-        $lines[] = "Periodo: {$from} a {$to}";
+
+        $lines[] = '';
         $lines[] = 'Registros totales: ' . count($rows);
         $lines[] = 'A tiempo: ' . $onTime . ', retardos: ' . $late . ', retardos mayores: ' . $veryLate;
         $lines[] = 'Horas totales: ' . round($hours, 2);
         $lines[] = 'Promedio horas por registro: ' . round($hours / max(1, count($rows)), 2);
 
-        $employees = array_keys($employeeStats);
-        $workdays = $this->workingDays($from, $to);
-        $absencesByEmp = [];
-        foreach ($employees as $name) {
-            $missing = 0;
-            foreach ($workdays as $day) {
-                if (!isset($present[$name . '|' . $day])) {
-                    $missing++;
-                }
-            }
-            $absencesByEmp[$name] = $missing;
-        }
-
-        $lines[] = 'Top empleados (puntualidad y horas):';
+        $lines[] = '';
+        $lines[] = 'Top empleados (puntualidad y horas); inasistencias = motor unificado:';
+        $byEmp = $absenceResult['byEmployee'];
         foreach (array_slice($employeeStats, 0, 8, true) as $name => $st) {
             $punctuality = (int) round((($st['days'] - $st['late'] - $st['veryLate']) / max(1, $st['days'])) * 100);
-            $lines[] = "- {$name}: días={$st['days']}, puntualidad={$punctuality}%, "
+            $absCnt = (int) ($byEmp[$name] ?? 0);
+            $lines[] = "- {$name}: días con registro={$st['days']}, puntualidad={$punctuality}%, "
                 . "retardos={$st['late']}, tardanzas mayores={$st['veryLate']}, "
-                . 'horas=' . round($st['hours'], 2) . ', inasistencias=' . ($absencesByEmp[$name] ?? 0);
+                . 'horas=' . round($st['hours'], 2) . ', inasistencias=' . $absCnt;
         }
 
+        $lines[] = '';
+        $lines[] = 'Empleados con más inasistencias en el periodo (hasta 15):';
+        $this->appendAbsenceLines($lines, $byEmp, 15);
+
         return implode("\n", $lines);
+    }
+
+    /**
+     * @param array<string, int> $byEmployee
+     */
+    private function appendAbsenceLines(array &$lines, array $byEmployee, int $max): void
+    {
+        if ($byEmployee === []) {
+            $lines[] = '(ninguna)';
+
+            return;
+        }
+        arsort($byEmployee, SORT_NUMERIC);
+        $i = 0;
+        foreach ($byEmployee as $name => $cnt) {
+            if ($i++ >= $max) {
+                break;
+            }
+            $lines[] = '- ' . $name . ': ' . $cnt;
+        }
     }
 
     private function resolveRange(): array
@@ -154,20 +185,4 @@ class ChatController extends BaseApiController
     {
         return (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $value);
     }
-
-    private function workingDays(string $from, string $to): array
-    {
-        $start = new DateTimeImmutable($from);
-        $end = (new DateTimeImmutable($to))->add(new DateInterval('P1D'));
-        $period = new DatePeriod($start, new DateInterval('P1D'), $end);
-        $days = [];
-        foreach ($period as $date) {
-            $dow = (int) $date->format('N');
-            if ($dow >= 1 && $dow <= 5) {
-                $days[] = $date->format('Y-m-d');
-            }
-        }
-        return $days;
-    }
 }
-

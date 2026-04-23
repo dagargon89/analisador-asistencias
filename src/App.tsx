@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import * as XLSX from "xlsx";
-import { getEmployees, getRecords, getSettings, postChat, postImport, updateSettings } from "./api";
+import { getAbsences, getEmployees, getRecords, getSettings, postChat, postImport, updateSettings } from "./api";
 import { useAuth } from "./auth/AuthContext";
 import { useTheme } from "./theme/ThemeContext";
 
@@ -346,7 +346,8 @@ type AttendanceDataJson = {
 function buildAttendanceJson(
   records: AttendanceRecord[],
   config: Config,
-  fileName: string
+  fileName: string,
+  serverAbsences?: { employee: string; date: string }[] | null
 ): AttendanceDataJson {
   const classifyMins = (entry: string): "aTiempo" | "retardo" | "retardoMayor" => {
     const mins = entry.split(":").map(Number).reduce((h, m) => h * 60 + m, 0);
@@ -383,19 +384,30 @@ function buildAttendanceJson(
   const dates = [...new Set(records.map((r) => r.date))].sort();
   const meses = [...new Set(records.map((r) => r.date.slice(0, 7)))].sort();
 
-  // Calculate absences for the full date range in the records
   const allEmployees = Object.keys(empMap);
   const presentSet = new Set(records.map((r) => `${r.employee}|${r.date}`));
   const inasistencias: AttendanceDataJson["inasistencias"] = [];
   const absenceByEmp: Record<string, number> = {};
 
   if (dates.length > 0) {
-    const workingDays = getWorkingDays(dates[0], dates[dates.length - 1]);
-    for (const emp of allEmployees) {
-      for (const day of workingDays) {
-        if (!presentSet.has(`${emp}|${day}`)) {
-          inasistencias.push({ empleado: emp, fecha: day });
-          absenceByEmp[emp] = (absenceByEmp[emp] || 0) + 1;
+    if (serverAbsences != null) {
+      const fromD = dates[0];
+      const toD = dates[dates.length - 1];
+      const empSet = new Set(allEmployees);
+      for (const row of serverAbsences) {
+        if (!empSet.has(row.employee)) continue;
+        if (row.date < fromD || row.date > toD) continue;
+        inasistencias.push({ empleado: row.employee, fecha: row.date });
+        absenceByEmp[row.employee] = (absenceByEmp[row.employee] || 0) + 1;
+      }
+    } else {
+      const workingDays = getWorkingDays(dates[0], dates[dates.length - 1]);
+      for (const emp of allEmployees) {
+        for (const day of workingDays) {
+          if (!presentSet.has(`${emp}|${day}`)) {
+            inasistencias.push({ empleado: emp, fecha: day });
+            absenceByEmp[emp] = (absenceByEmp[emp] || 0) + 1;
+          }
         }
       }
     }
@@ -672,7 +684,7 @@ function HelpTip({ text }: { text: string }) {
 
 // --- Main App Component ---
 export default function AttendancePlatform() {
-  const { user, doLogout } = useAuth();
+  const { user, loading: authLoading, isAuthenticated, doLogout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showSettings, setShowSettings] = useState(false);
@@ -723,6 +735,19 @@ export default function AttendancePlatform() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [lastSourceFile, setLastSourceFile] = useState("historial_db");
 
+  const [periodAbsenceCache, setPeriodAbsenceCache] = useState<{
+    from: string;
+    to: string;
+    employeeKey: string;
+    absences: { employee: string; date: string }[];
+  } | null>(null);
+
+  const [jsonAbsenceCache, setJsonAbsenceCache] = useState<{
+    from: string;
+    to: string;
+    absences: { employee: string; date: string }[];
+  } | null>(null);
+
   // --- Chat state ---
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -745,7 +770,8 @@ export default function AttendancePlatform() {
       late: "Conteo de registros con entrada después de la tolerancia y antes o igual al umbral de retardo mayor.",
       veryLate: "Conteo de registros con entrada posterior al umbral de retardo mayor configurado.",
       avgHours: "Promedio simple de horas trabajadas por registro del periodo: horas totales / número de registros.",
-      absences: "Suma de días hábiles sin registro. También se muestra una tasa normalizada: inasistencias / (empleados activos base × días hábiles).",
+      absences:
+        "Con sesión iniciada se usa el motor del servidor (lun–vie, calendario de inhábiles, fechas de contrato si existen). Sin sesión: cálculo local por días hábiles sin registro. Tasa: inasistencias / (empleados activos base × días hábiles).",
       weekday: "Distribución de registros por día de semana (lunes a viernes) dentro del periodo y filtros activos.",
       incidents: "Composición de incidencias por registro (a tiempo, retardo, retardo mayor). El valor central cambia según el filtro diario/mensual/semanal.",
       employeeSummary: "Resumen agregado por empleado en el periodo: días con registro, incidencias, horas y puntualidad.",
@@ -831,10 +857,17 @@ export default function AttendancePlatform() {
     return weeks;
   }, [selectedMonth]);
 
-  const attendanceJson = useMemo(
-    () => (records.length > 0 ? buildAttendanceJson(records, config, lastSourceFile) : null),
-    [records, config, lastSourceFile]
-  );
+  const attendanceJson = useMemo(() => {
+    if (records.length === 0) return null;
+    const sortedDates = [...new Set(records.map((r) => r.date))].sort();
+    const from = sortedDates[0];
+    const to = sortedDates[sortedDates.length - 1];
+    const serverAbsences =
+      jsonAbsenceCache && jsonAbsenceCache.from === from && jsonAbsenceCache.to === to
+        ? jsonAbsenceCache.absences
+        : null;
+    return buildAttendanceJson(records, config, lastSourceFile, serverAbsences);
+  }, [records, config, lastSourceFile, jsonAbsenceCache]);
 
   // Auto-select most recent month when months change
   useEffect(() => {
@@ -975,6 +1008,57 @@ export default function AttendancePlatform() {
     return { start: rawPeriodRange.start, end: cappedEnd };
   }, [rawPeriodRange, todayIso]);
 
+  useEffect(() => {
+    if (authLoading || !isAuthenticated || !periodDateRange) {
+      setPeriodAbsenceCache(null);
+      return;
+    }
+    const employeeKey = selectedEmployee === "all" ? "all" : selectedEmployee;
+    let cancelled = false;
+    const { start, end } = periodDateRange;
+    const req =
+      selectedEmployee === "all"
+        ? getAbsences({ from: start, to: end })
+        : getAbsences({ from: start, to: end, employee: selectedEmployee });
+    void req
+      .then((res) => {
+        if (cancelled) return;
+        setPeriodAbsenceCache({ from: start, to: end, employeeKey, absences: res.absences });
+      })
+      .catch(() => {
+        if (!cancelled) setPeriodAbsenceCache(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, isAuthenticated, periodDateRange, selectedEmployee]);
+
+  useEffect(() => {
+    if (!isAuthenticated || records.length === 0) {
+      setJsonAbsenceCache(null);
+      return;
+    }
+    const sortedDates = [...new Set(records.map((r) => r.date))].sort();
+    const from = sortedDates[0];
+    const to = sortedDates[sortedDates.length - 1];
+    if (!from || !to) {
+      setJsonAbsenceCache(null);
+      return;
+    }
+    let cancelled = false;
+    void getAbsences({ from, to })
+      .then((res) => {
+        if (cancelled) return;
+        setJsonAbsenceCache({ from, to, absences: res.absences });
+      })
+      .catch(() => {
+        if (!cancelled) setJsonAbsenceCache(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, records]);
+
   const filteredData = useMemo(() => {
     if (!periodDateRange) return [];
     let data = records.filter((r) => r.date >= periodDateRange.start && r.date <= periodDateRange.end);
@@ -1016,7 +1100,22 @@ export default function AttendancePlatform() {
   }, [periodDateRange]);
 
   const absenceData = useMemo(() => {
-    if (!periodDateRange || records.length === 0 || absenceBaseEmployees.length === 0) return [];
+    if (!periodDateRange || absenceBaseEmployees.length === 0) return [];
+
+    const employeeKey = selectedEmployee === "all" ? "all" : selectedEmployee;
+    if (
+      periodAbsenceCache &&
+      periodAbsenceCache.from === periodDateRange.start &&
+      periodAbsenceCache.to === periodDateRange.end &&
+      periodAbsenceCache.employeeKey === employeeKey
+    ) {
+      return periodAbsenceCache.absences
+        .slice()
+        .sort((a, b) => a.date.localeCompare(b.date) || a.employee.localeCompare(b.employee));
+    }
+
+    if (records.length === 0) return [];
+
     const presentSet = new Set(records.map((r) => `${r.employee}|${r.date}`));
     const absences: { employee: string; date: string }[] = [];
     for (const emp of absenceBaseEmployees) {
@@ -1027,7 +1126,7 @@ export default function AttendancePlatform() {
       }
     }
     return absences.sort((a, b) => a.date.localeCompare(b.date) || a.employee.localeCompare(b.employee));
-  }, [records, periodDateRange, absenceBaseEmployees, workingDaysInRange]);
+  }, [records, periodDateRange, absenceBaseEmployees, workingDaysInRange, periodAbsenceCache, selectedEmployee]);
 
   const stats = useMemo(() => {
     let onTime = 0, late = 0, veryLate = 0;

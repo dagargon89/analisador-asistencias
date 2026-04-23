@@ -95,6 +95,27 @@ export async function getRecords(params?: { from?: string; to?: string; employee
   return request<{ records: ApiAttendanceRecord[]; period: { from: string; to: string } }>(`/api/records${suffix}`);
 }
 
+export type AbsencesMeta = {
+  definition: string;
+  weekdayDaysInRange: number;
+  calendarDaysExcluded: number;
+  workingDaysAfterCalendar: number;
+  expectedAttendanceSlots: number;
+  absenceSlots: number;
+};
+
+export async function getAbsences(params: { from: string; to: string; employee?: string }) {
+  const q = new URLSearchParams();
+  q.set("from", params.from);
+  q.set("to", params.to);
+  if (params.employee) q.set("employee", params.employee);
+  return request<{
+    absences: { employee: string; date: string }[];
+    period: { from: string; to: string };
+    meta: AbsencesMeta;
+  }>(`/api/absences?${q.toString()}`);
+}
+
 export async function getEmployees() {
   return request<{ employees: ApiEmployee[] }>("/api/employees");
 }
