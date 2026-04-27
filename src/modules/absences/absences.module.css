@@ -246,6 +246,16 @@
   color: #7a7a7a;
 }
 
+.abs-btn--danger {
+  background: rgba(235, 87, 87, 0.22);
+  color: #c0392b;
+}
+
+.abs-btn--edit {
+  background: rgba(47, 128, 237, 0.12);
+  color: #2f80ed;
+}
+
 .abs-kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

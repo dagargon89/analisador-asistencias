@@ -465,10 +465,56 @@ export async function rejectAbsence(id: number, reason: string): Promise<{ id: n
   });
 }
 
-export async function cancelAbsence(id: number): Promise<{ id: number; status: AbsenceStatus }> {
+export async function cancelAbsence(
+  id: number,
+  options?: { forceClosedPeriod?: boolean },
+): Promise<{ id: number; status: AbsenceStatus }> {
   return request<{ id: number; status: AbsenceStatus }>(`/api/employee-absences/${id}/cancel`, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({
+      ...(options?.forceClosedPeriod ? { forceClosedPeriod: true } : {}),
+    }),
+  });
+}
+
+export async function updateEmployeeAbsence(
+  id: number,
+  input: {
+    employeeId?: number;
+    absenceTypeId?: number;
+    startDate?: string;
+    endDate?: string;
+    reason?: string | null;
+    documentUrl?: string | null;
+    notes?: string | null;
+    forceClosedPeriod?: boolean;
+  },
+): Promise<{ id: number }> {
+  const body: Record<string, unknown> = {};
+  if (input.employeeId !== undefined) body.employee_id = input.employeeId;
+  if (input.absenceTypeId !== undefined) body.absence_type_id = input.absenceTypeId;
+  if (input.startDate !== undefined) body.start_date = input.startDate;
+  if (input.endDate !== undefined) body.end_date = input.endDate;
+  if (input.reason !== undefined) body.reason = input.reason;
+  if (input.documentUrl !== undefined) body.document_url = input.documentUrl;
+  if (input.notes !== undefined) body.notes = input.notes;
+  if (input.forceClosedPeriod) body.forceClosedPeriod = true;
+
+  return request<{ id: number }>(`/api/employee-absences/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteEmployeeAbsence(
+  id: number,
+  options?: { forceClosedPeriod?: boolean },
+): Promise<{ id: number }> {
+  return request<{ id: number }>(`/api/employee-absences/${id}`, {
+    method: "DELETE",
+    body: JSON.stringify({
+      ...(options?.forceClosedPeriod ? { forceClosedPeriod: true } : {}),
+    }),
   });
 }
 

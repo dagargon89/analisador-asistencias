@@ -42,6 +42,9 @@ $routes->group('api', ['filter' => 'cors'], static function ($routes): void {
             $routes->post('employee-absences/(:num)/approve', 'Api\AbsencesController::approve/$1');
             $routes->post('employee-absences/(:num)/reject', 'Api\AbsencesController::reject/$1');
             $routes->post('employee-absences/(:num)/cancel', 'Api\AbsencesController::cancel/$1');
+            $routes->put('employee-absences/(:num)', 'Api\AbsencesController::update/$1');
+            $routes->patch('employee-absences/(:num)', 'Api\AbsencesController::update/$1');
+            $routes->delete('employee-absences/(:num)', 'Api\AbsencesController::delete/$1');
 
             // Saldos de vacaciones LFT (Sprint 2)
             $routes->get('leave-balances', 'Api\LeaveBalancesController::show');

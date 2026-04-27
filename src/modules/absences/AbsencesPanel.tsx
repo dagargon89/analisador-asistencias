@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import {
   approveAbsence,
   cancelAbsence,
+  deleteEmployeeAbsence,
   getTypedAbsences,
   listEmployeeAbsences,
   rejectAbsence,
@@ -50,6 +51,7 @@ export function AbsencesPanel({ from, to, employees, selectedEmployee, canManage
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editRecord, setEditRecord] = useState<EmployeeAbsence | null>(null);
   const [, startTransition] = useTransition();
 
   const employeeFilter = selectedEmployee && selectedEmployee !== "all" ? selectedEmployee : undefined;
@@ -86,6 +88,11 @@ export function AbsencesPanel({ from, to, employees, selectedEmployee, canManage
     [employees],
   );
 
+  const openCreateDialog = () => {
+    setEditRecord(null);
+    setDialogOpen(true);
+  };
+
   const handleApprove = (id: number) => {
     startTransition(async () => {
       try {
@@ -110,14 +117,70 @@ export function AbsencesPanel({ from, to, employees, selectedEmployee, canManage
     });
   };
 
-  const handleCancel = (id: number) => {
-    if (!window.confirm("¿Cancelar la solicitud?")) return;
+  const handleAnular = (a: EmployeeAbsence) => {
+    const isApproved = a.status === "approved";
+    const msg = isApproved
+      ? "¿Anular esta solicitud aprobada? Dejará de contar en el calendario tipado y en el saldo LFT."
+      : "¿Cancelar esta solicitud pendiente?";
+    if (!window.confirm(msg)) return;
     startTransition(async () => {
       try {
-        await cancelAbsence(id);
+        await cancelAbsence(a.id);
+        setError(null);
         await refresh();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Error al cancelar");
+        const m = e instanceof Error ? e.message : "";
+        if (isApproved && /quincena cerrada|forzar/i.test(m)) {
+          if (
+            window.confirm(
+              "El permiso cruza una quincena cerrada. ¿Intentar de nuevo forzando? (solo tiene efecto si su usuario es administrador.)",
+            )
+          ) {
+            try {
+              await cancelAbsence(a.id, { forceClosedPeriod: true });
+              setError(null);
+              await refresh();
+            } catch (e2) {
+              setError(e2 instanceof Error ? e2.message : "No se pudo anular");
+            }
+          } else {
+            setError(m);
+          }
+        } else {
+          setError(m || "Error al anular");
+        }
+      }
+    });
+  };
+
+  const handleEliminar = (a: EmployeeAbsence) => {
+    if (!window.confirm("¿Eliminar permanentemente este registro? Esta acción no se puede deshacer.")) return;
+    startTransition(async () => {
+      try {
+        await deleteEmployeeAbsence(a.id);
+        setError(null);
+        await refresh();
+      } catch (e) {
+        const m = e instanceof Error ? e.message : "";
+        if (/quincena cerrada|forzar/i.test(m)) {
+          if (
+            window.confirm(
+              "El registro cruza una quincena cerrada. ¿Forzar eliminación? (solo administrador.)",
+            )
+          ) {
+            try {
+              await deleteEmployeeAbsence(a.id, { forceClosedPeriod: true });
+              setError(null);
+              await refresh();
+            } catch (e2) {
+              setError(e2 instanceof Error ? e2.message : "No se pudo eliminar");
+            }
+          } else {
+            setError(m);
+          }
+        } else {
+          setError(m || "Error al eliminar");
+        }
       }
     });
   };
@@ -150,14 +213,17 @@ export function AbsencesPanel({ from, to, employees, selectedEmployee, canManage
           style={{ minWidth: 180 }}
         >
           {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
           ))}
         </select>
         <div className={styles["abs-toolbar__spacer"]} />
         {canManage && (
           <button
+            type="button"
             className={`${styles["abs-btn"]} ${styles["abs-btn--primary"]}`}
-            onClick={() => setDialogOpen(true)}
+            onClick={openCreateDialog}
           >
             + Nueva ausencia
           </button>
@@ -165,6 +231,14 @@ export function AbsencesPanel({ from, to, employees, selectedEmployee, canManage
       </div>
 
       {error && <div className={styles["abs-error"]}>{error}</div>}
+
+      {canManage && (
+        <p style={{ fontSize: 12, color: "var(--color-text-muted)", margin: "0 0 8px 0" }}>
+          Puede <strong>corregir</strong> fechas y tipo en pendientes y aprobadas, <strong>anular</strong> aprobadas o pendientes
+          (dejan de contar en reportes) o <strong>eliminar</strong> el registro. Si el permiso cruza una quincena cerrada, un
+          administrador puede forzar la operación.
+        </p>
+      )}
 
       <TypedCalendar days={typedDays} from={from} to={to} />
 
@@ -197,60 +271,117 @@ export function AbsencesPanel({ from, to, employees, selectedEmployee, canManage
                 </td>
               </tr>
             )}
-            {!loading && absences.map((a) => (
-              <tr key={a.id}>
-                <td>{a.employeeName}</td>
-                <td>
-                  <span className={styles["abs-type-chip"]} style={{ background: a.colorHex }}>
-                    {a.typeLabel}
-                  </span>
-                </td>
-                <td>{a.startDate}</td>
-                <td>{a.endDate}</td>
-                <td>{a.businessDays}</td>
-                <td><AbsenceStatusBadge status={a.status} /></td>
-                <td style={{ maxWidth: 260 }}>{a.reason ?? ""}</td>
-                {canManage && (
+            {!loading &&
+              absences.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.employeeName}</td>
                   <td>
-                    <div className={styles["abs-row-actions"]}>
-                      {a.status === "pending" && (
-                        <>
-                          <button
-                            type="button"
-                            className={`${styles["abs-btn"]} ${styles["abs-btn--approve"]}`}
-                            onClick={() => handleApprove(a.id)}
-                          >
-                            Aprobar
-                          </button>
-                          <button
-                            type="button"
-                            className={`${styles["abs-btn"]} ${styles["abs-btn--reject"]}`}
-                            onClick={() => handleReject(a.id)}
-                          >
-                            Rechazar
-                          </button>
-                          <button
-                            type="button"
-                            className={`${styles["abs-btn"]} ${styles["abs-btn--cancel"]}`}
-                            onClick={() => handleCancel(a.id)}
-                          >
-                            Cancelar
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    <span className={styles["abs-type-chip"]} style={{ background: a.colorHex }}>
+                      {a.typeLabel}
+                    </span>
                   </td>
-                )}
-              </tr>
-            ))}
+                  <td>{a.startDate}</td>
+                  <td>{a.endDate}</td>
+                  <td>{a.businessDays}</td>
+                  <td>
+                    <AbsenceStatusBadge status={a.status} />
+                  </td>
+                  <td style={{ maxWidth: 260 }}>{a.reason ?? ""}</td>
+                  {canManage && (
+                    <td>
+                      <div className={styles["abs-row-actions"]}>
+                        {a.status === "pending" && (
+                          <>
+                            <button
+                              type="button"
+                              className={`${styles["abs-btn"]} ${styles["abs-btn--approve"]}`}
+                              onClick={() => handleApprove(a.id)}
+                            >
+                              Aprobar
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles["abs-btn"]} ${styles["abs-btn--reject"]}`}
+                              onClick={() => handleReject(a.id)}
+                            >
+                              Rechazar
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles["abs-btn"]} ${styles["abs-btn--cancel"]}`}
+                              onClick={() => handleAnular(a)}
+                            >
+                              Anular
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles["abs-btn"]} ${styles["abs-btn--edit"]}`}
+                              onClick={() => {
+                                setEditRecord(a);
+                                setDialogOpen(true);
+                              }}
+                            >
+                              Corregir
+                            </button>
+                          </>
+                        )}
+                        {a.status === "approved" && (
+                          <>
+                            <button
+                              type="button"
+                              className={`${styles["abs-btn"]} ${styles["abs-btn--cancel"]}`}
+                              onClick={() => handleAnular(a)}
+                            >
+                              Anular
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles["abs-btn"]} ${styles["abs-btn--edit"]}`}
+                              onClick={() => {
+                                setEditRecord(a);
+                                setDialogOpen(true);
+                              }}
+                            >
+                              Corregir
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles["abs-btn"]} ${styles["abs-btn--danger"]}`}
+                              onClick={() => handleEliminar(a)}
+                            >
+                              Eliminar
+                            </button>
+                          </>
+                        )}
+                        {(a.status === "rejected" || a.status === "cancelled") && (
+                          <button
+                            type="button"
+                            className={`${styles["abs-btn"]} ${styles["abs-btn--danger"]}`}
+                            onClick={() => handleEliminar(a)}
+                          >
+                            Eliminar
+                          </button>
+                        )}
+                        {a.status === "superseded" && (
+                          <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>—</span>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
 
       <AbsenceFormDialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onCreated={() => {
+        editRecord={editRecord}
+        onClose={() => {
+          setDialogOpen(false);
+          setEditRecord(null);
+        }}
+        onSuccess={() => {
           void refresh();
         }}
         employees={employeeOptions}
