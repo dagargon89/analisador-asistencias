@@ -13,7 +13,6 @@ import {
 import { AbsenceFormDialog } from "./AbsenceFormDialog";
 import { AbsenceStatusBadge } from "./AbsenceStatusBadge";
 import { TypedCalendar } from "./TypedCalendar";
-import { AbsencesMonthCalendar } from "../shared/AbsencesMonthCalendar";
 import styles from "./absences.module.css";
 
 export type AbsencesPanelEmployee = { id: number; name: string; isActive: boolean };
@@ -166,12 +165,6 @@ export function AbsencesPanel({ from, to, employees, selectedEmployee, canManage
       </div>
 
       {error && <div className={styles["abs-error"]}>{error}</div>}
-
-      <AbsencesMonthCalendar
-        selectedEmployee={selectedEmployee}
-        initialDate={new Date(from)}
-        subtitle="Visualización mensual compartida con el Dashboard."
-      />
 
       <TypedCalendar days={typedDays} from={from} to={to} />
 

@@ -3517,10 +3517,11 @@ function LeaveAbsencesSection({
   activeEmployees: LeaveAbsencesEmployee[];
   selectedEmployee: string;
 }) {
-  const [section, setSection] = useState<"requests" | "balances" | "periods" | "dashboard">("requests");
+  const [section, setSection] = useState<"calendar" | "requests" | "balances" | "periods" | "dashboard">("calendar");
 
   const tabs: { id: typeof section; label: string }[] = [
-    { id: "requests", label: "Registro y calendario" },
+    { id: "calendar", label: "Calendario" },
+    { id: "requests", label: "Registro" },
     { id: "balances", label: "Saldos LFT" },
     { id: "periods", label: "Quincenas y reporte" },
     { id: "dashboard", label: "Dashboard" },
@@ -3559,6 +3560,14 @@ function LeaveAbsencesSection({
           </button>
         ))}
       </div>
+
+      {section === "calendar" && (
+        <AbsencesMonthCalendar
+          selectedEmployee={selectedEmployee}
+          initialDate={periodDateRange ? new Date(periodDateRange.start) : undefined}
+          subtitle="Vista mensual única — sincronizada con el Dashboard."
+        />
+      )}
 
       {section === "requests" && (
         periodDateRange ? (
