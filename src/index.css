@@ -36,6 +36,8 @@ html[data-theme="dark"] {
   --color-chat-bubble-model-border: rgba(99, 132, 255, 0.12);
   --color-markdown-code-bg: rgba(99, 132, 255, 0.08);
   --color-table-cell-border: rgba(99, 132, 255, 0.06);
+  --color-card-bg: #151a2e;
+  --color-card-strong-bg: #1a2138;
 }
 
 html[data-theme="light"] {
@@ -70,6 +72,8 @@ html[data-theme="light"] {
   --color-chat-bubble-model-border: rgba(70, 102, 192, 0.22);
   --color-markdown-code-bg: rgba(99, 132, 255, 0.12);
   --color-table-cell-border: rgba(70, 102, 192, 0.14);
+  --color-card-bg: #ffffff;
+  --color-card-strong-bg: #f1f5ff;
 }
 
 html, body {

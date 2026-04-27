@@ -25,7 +25,15 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             try {
               await doLogin(email, password);
             } catch (err) {
-              setError(err instanceof Error ? err.message : "No se pudo iniciar sesión.");
+              const raw = err instanceof Error ? err.message : "No se pudo iniciar sesión.";
+              const msg = raw.trim();
+              const useless =
+                msg === "" ||
+                msg === '""' ||
+                msg === "''" ||
+                msg === "null" ||
+                msg === "undefined";
+              setError(useless ? "No se pudo iniciar sesión. Comprueba credenciales y que el backend esté disponible." : raw);
             } finally {
               setSubmitting(false);
             }
@@ -50,7 +58,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Acceso admin/supervisor para reportes, importación y chat.</div>
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoComplete="username" />
           <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Contraseña" type="password" style={inputStyle} autoComplete="current-password" />
-          {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
+          {error && error.trim() !== "" && (
+            <div style={{ color: "#f87171", fontSize: 12 }} role="alert">
+              {error}
+            </div>
+          )}
           <button disabled={submitting} style={btnStyle}>{submitting ? "Entrando..." : "Entrar"}</button>
           <a href="/kiosk" style={{ color: "var(--color-link)", fontSize: 12, textAlign: "right" }}>Ir a modo kiosko</a>
         </form>

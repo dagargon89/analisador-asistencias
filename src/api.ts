@@ -1,6 +1,7 @@
 import { getAuthState } from "./auth/authStore";
 import { refreshTokens } from "./auth/apiAuth";
 import { API_BASE } from "./config";
+import { formatHttpErrorResponse } from "./lib/httpErrorMessage";
 
 export type ApiAttendanceRecord = {
   id: number;
@@ -116,11 +117,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       res = await doFetch();
     }
   }
+  const txt = await res.text();
   if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(txt || `HTTP ${res.status}`);
+    throw new Error(formatHttpErrorResponse(res.status, txt));
   }
-  return (await res.json()) as T;
+  const trimmed = txt.trim();
+  if (!trimmed) {
+    throw new Error("Respuesta vacía del servidor.");
+  }
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    throw new Error("El servidor devolvió datos que no son JSON válidos.");
+  }
 }
 
 export async function getRecords(params?: { from?: string; to?: string; employee?: string }) {

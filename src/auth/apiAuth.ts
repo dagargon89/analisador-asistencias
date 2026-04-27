@@ -1,5 +1,6 @@
 import { clearAuthState, getAuthState, setAuthState, type AuthUser } from "./authStore";
 import { API_BASE } from "../config";
+import { formatHttpErrorResponse } from "../lib/httpErrorMessage";
 
 type LoginResponse = {
   accessToken: string;
@@ -12,11 +13,19 @@ async function rawRequest<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
   });
+  const txt = await res.text();
   if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(txt || `HTTP ${res.status}`);
+    throw new Error(formatHttpErrorResponse(res.status, txt));
   }
-  return (await res.json()) as T;
+  const trimmed = txt.trim();
+  if (!trimmed) {
+    throw new Error("Respuesta vacía del servidor.");
+  }
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    throw new Error("El servidor devolvió datos que no son JSON válidos.");
+  }
 }
 
 export async function login(email: string, password: string): Promise<AuthUser> {
@@ -24,6 +33,19 @@ export async function login(email: string, password: string): Promise<AuthUser> 
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data) ||
+    typeof data.accessToken !== "string" ||
+    typeof data.refreshToken !== "string" ||
+    !data.user ||
+    typeof data.user !== "object"
+  ) {
+    throw new Error(
+      "La respuesta de inicio de sesión no es válida. Comprueba que VITE_API_BASE_URL apunte al backend correcto.",
+    );
+  }
   setAuthState({
     accessToken: data.accessToken,
     refreshToken: data.refreshToken,
