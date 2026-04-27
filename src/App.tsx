@@ -7,6 +7,7 @@ import { AbsencesPanel } from "./modules/absences/AbsencesPanel";
 import { LeaveBalancePanel } from "./modules/absences/LeaveBalancePanel";
 import { TypedAttendanceDashboard } from "./modules/absences/TypedAttendanceDashboard";
 import { PayrollPeriodsPanel } from "./modules/payroll/PayrollPeriodsPanel";
+import { AbsencesMonthCalendar } from "./modules/shared/AbsencesMonthCalendar";
 import { listWeekdaysBetween, toIsoDate } from "./lib/dates";
 
 // --- Types ---
@@ -2445,6 +2446,13 @@ export default function AttendancePlatform() {
                   pageSize={PAGE_SIZE_DASHBOARD_EMPLOYEES}
                   onPageChange={setDashboardEmployeesPage}
                   itemLabel="empleados"
+                />
+              </div>
+
+              <div style={{ marginTop: 24 }}>
+                <AbsencesMonthCalendar
+                  selectedEmployee={selectedEmployee}
+                  subtitle="Vacaciones, permisos y ausencias aprobadas o pendientes — sincronizado con la sección Vacaciones y Ausencias."
                 />
               </div>
             </>

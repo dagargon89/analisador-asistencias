@@ -1,0 +1,347 @@
+.amc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border, rgba(99, 132, 255, 0.12));
+  background: var(--color-card-bg, rgba(255, 255, 255, 0.02));
+}
+
+.amc-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.amc-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text, #e6e9f5);
+}
+
+.amc-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted, #8a94b3);
+}
+
+.amc-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.amc-month-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text, #e6e9f5);
+  min-width: 140px;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+.amc-nav-btn,
+.amc-today-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, rgba(99, 132, 255, 0.18));
+  background: transparent;
+  color: var(--color-text, #e6e9f5);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.amc-nav-btn:hover,
+.amc-today-btn:hover {
+  background: rgba(99, 132, 255, 0.08);
+}
+
+.amc-today-btn {
+  background: rgba(47, 128, 237, 0.12);
+  color: #2f80ed;
+  border-color: rgba(47, 128, 237, 0.3);
+}
+
+.amc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--color-text-muted, #8a94b3);
+}
+
+.amc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.amc-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.amc-error {
+  padding: 10px 14px;
+  background: rgba(235, 87, 87, 0.12);
+  border: 1px solid rgba(235, 87, 87, 0.3);
+  border-radius: 8px;
+  color: #c0392b;
+  font-size: 13px;
+}
+
+.amc-grid-head {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted, #8a94b3);
+}
+
+.amc-weekday-label {
+  text-align: center;
+  padding: 6px 0;
+}
+
+.amc-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.amc-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 88px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(99, 132, 255, 0.1);
+  background: rgba(255, 255, 255, 0.015);
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.amc-cell:disabled {
+  cursor: default;
+}
+
+.amc-cell:hover:not(:disabled) {
+  background: rgba(99, 132, 255, 0.08);
+  border-color: rgba(99, 132, 255, 0.3);
+}
+
+.amc-cell--outside {
+  opacity: 0.45;
+}
+
+.amc-cell--weekend {
+  background: rgba(99, 132, 255, 0.025);
+}
+
+.amc-cell--today {
+  border-color: rgba(47, 128, 237, 0.5);
+  box-shadow: 0 0 0 1px rgba(47, 128, 237, 0.4) inset;
+}
+
+.amc-cell--has-events {
+  background: rgba(99, 132, 255, 0.04);
+}
+
+.amc-cell-day {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text, #e6e9f5);
+  font-variant-numeric: tabular-nums;
+}
+
+.amc-cell-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.amc-event-chip {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.amc-event-more {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-muted, #8a94b3);
+  padding: 1px 4px;
+}
+
+.amc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.amc-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 14, 30, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.amc-modal-content {
+  position: relative;
+  background: var(--color-card-bg, #151a2e);
+  border: 1px solid var(--color-border, rgba(99, 132, 255, 0.18));
+  border-radius: 14px;
+  padding: 20px 24px;
+  min-width: 360px;
+  max-width: 560px;
+  width: calc(100% - 40px);
+  max-height: 70vh;
+  overflow: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.amc-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.amc-modal-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.amc-modal-close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--color-text-muted, #8a94b3);
+  padding: 0 4px;
+}
+
+.amc-modal-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-muted, #8a94b3);
+  font-size: 13px;
+}
+
+.amc-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.amc-modal-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(99, 132, 255, 0.05);
+  border: 1px solid rgba(99, 132, 255, 0.1);
+}
+
+.amc-modal-swatch {
+  flex: 0 0 6px;
+  width: 6px;
+  border-radius: 3px;
+}
+
+.amc-modal-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.amc-modal-item-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text, #e6e9f5);
+}
+
+.amc-modal-item-sub {
+  font-size: 12px;
+  color: var(--color-text-muted, #8a94b3);
+}
+
+.amc-modal-item-reason {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text, #e6e9f5);
+  font-style: italic;
+}
+
+.amc-status-pending {
+  color: #d4a017;
+  font-weight: 700;
+}
+
+.amc-status-approved {
+  color: #219653;
+  font-weight: 700;
+}
+
+.amc-status-rejected {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.amc-status-cancelled {
+  color: #7a7a7a;
+  font-weight: 700;
+}
+
+.amc-status-superseded {
+  color: #8e44ad;
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .amc-cell {
+    min-height: 72px;
+    padding: 4px;
+  }
+  .amc-event-chip {
+    font-size: 9px;
+    padding: 1px 5px;
+  }
+  .amc-month-label {
+    min-width: 100px;
+  }
+}
