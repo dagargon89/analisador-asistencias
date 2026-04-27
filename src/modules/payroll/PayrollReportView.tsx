@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getPayrollReport, type PayrollReport } from "../../api";
+import { Kpi } from "../shared/Kpi";
 import styles from "../absences/absences.module.css";
 
 type Props = { periodId: number };
@@ -81,11 +82,3 @@ export function PayrollReportView({ periodId }: Props) {
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className={styles["abs-kpi"]}>
-      <div className={styles["abs-kpi__label"]}>{label}</div>
-      <div className={styles["abs-kpi__value"]} style={tone ? { color: tone } : undefined}>{value}</div>
-    </div>
-  );
-}

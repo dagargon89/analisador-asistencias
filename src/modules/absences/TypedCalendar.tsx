@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { TypedDay, TypedDayState } from "../../api";
+import { listWeekdaysBetween } from "../../lib/dates";
 import styles from "./absences.module.css";
 
 type Props = {
@@ -23,24 +24,6 @@ const SHORT: Record<TypedDayState, string> = {
   JUSTIFIED_UNPAID: "JS",
   UNJUSTIFIED_ABSENCE: "F",
 };
-
-function listWeekdaysBetween(from: string, to: string): string[] {
-  const out: string[] = [];
-  const start = new Date(`${from}T00:00:00`);
-  const end = new Date(`${to}T00:00:00`);
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    const dow = cursor.getDay();
-    if (dow >= 1 && dow <= 5) {
-      const y = cursor.getFullYear();
-      const m = String(cursor.getMonth() + 1).padStart(2, "0");
-      const d = String(cursor.getDate()).padStart(2, "0");
-      out.push(`${y}-${m}-${d}`);
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return out;
-}
 
 export function TypedCalendar({ days, from, to }: Props) {
   const grid = useMemo(() => {

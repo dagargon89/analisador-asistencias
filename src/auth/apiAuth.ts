@@ -1,6 +1,5 @@
 import { clearAuthState, getAuthState, setAuthState, type AuthUser } from "./authStore";
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
+import { API_BASE } from "../config";
 
 type LoginResponse = {
   accessToken: string;

@@ -45,5 +45,17 @@ abstract class BaseApiController extends BaseController
         $payload = json_decode($raw, true);
         return is_array($payload) ? $payload : [];
     }
+
+    /**
+     * Determina si un timestamp de bloqueo (`locked_until`) sigue vigente.
+     * Helper compartido por flujos de auth (login web y kiosko) para no duplicar reglas.
+     */
+    protected function isLocked(?string $lockedUntil): bool
+    {
+        if ($lockedUntil === null || $lockedUntil === '') {
+            return false;
+        }
+        return strtotime($lockedUntil) > time();
+    }
 }
 

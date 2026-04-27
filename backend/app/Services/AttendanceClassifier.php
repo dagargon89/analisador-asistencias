@@ -2,6 +2,14 @@
 
 namespace App\Services;
 
+/**
+ * Fuente de verdad para la clasificación de entrada (ontime/late/verylate).
+ *
+ * Convive una versión espejo de previsualización en el frontend
+ * (`src/App.tsx::classifyEntry`). Si esta regla cambia, debe actualizarse
+ * primero aquí y replicarse en el frontend para mantener consistencia
+ * entre lo que ve el usuario y lo que persiste el API.
+ */
 class AttendanceClassifier
 {
     public static function classify(string $entryTime, string $scheduledEntry, int $toleranceMinutes, int $lateThresholdMinutes): string

@@ -1,6 +1,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { recalcLeaveBalances } from "../../api";
 import { useLeaveBalance } from "./useLeaveBalance";
+import { Kpi } from "../shared/Kpi";
 import styles from "./absences.module.css";
 
 type Props = {
@@ -62,12 +63,12 @@ export function LeaveBalancePanel({ employees, canManage = true }: Props) {
 
       {!loading && balance && (
         <div className={styles["abs-kpi-row"]}>
-          <KpiCard label="Antigüedad" value={`${balance.yearsOfService} años`} />
-          <KpiCard label="Otorgados" value={`${balance.entitledDays.toFixed(2)}`} />
-          <KpiCard label="Usados" value={`${balance.usedDays.toFixed(2)}`} tone="#f2994a" />
-          <KpiCard label="Arrastre" value={`${balance.carriedOverDays.toFixed(2)}`} />
-          <KpiCard label="Disponibles" value={`${balance.availableDays.toFixed(2)}`} tone="#27ae60" />
-          <KpiCard label="Prima vac. (días)" value={`${balance.primaVacacionalDays.toFixed(2)}`} />
+          <Kpi label="Antigüedad" value={`${balance.yearsOfService} años`} />
+          <Kpi label="Otorgados" value={`${balance.entitledDays.toFixed(2)}`} />
+          <Kpi label="Usados" value={`${balance.usedDays.toFixed(2)}`} tone="#f2994a" />
+          <Kpi label="Arrastre" value={`${balance.carriedOverDays.toFixed(2)}`} />
+          <Kpi label="Disponibles" value={`${balance.availableDays.toFixed(2)}`} tone="#27ae60" />
+          <Kpi label="Prima vac. (días)" value={`${balance.primaVacacionalDays.toFixed(2)}`} />
         </div>
       )}
 
@@ -84,11 +85,3 @@ export function LeaveBalancePanel({ employees, canManage = true }: Props) {
   );
 }
 
-function KpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className={styles["abs-kpi"]}>
-      <div className={styles["abs-kpi__label"]}>{label}</div>
-      <div className={styles["abs-kpi__value"]} style={tone ? { color: tone } : undefined}>{value}</div>
-    </div>
-  );
-}

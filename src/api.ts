@@ -1,5 +1,6 @@
 import { getAuthState } from "./auth/authStore";
 import { refreshTokens } from "./auth/apiAuth";
+import { API_BASE } from "./config";
 
 export type ApiAttendanceRecord = {
   id: number;
@@ -58,8 +59,6 @@ export type ImportPayload = {
 };
 
 type ChatHistory = { role: "user" | "model"; text: string };
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const doFetch = async () => {

@@ -239,12 +239,5 @@ class AuthController extends BaseApiController
         ]);
     }
 
-    private function isLocked($lockedUntil): bool
-    {
-        if (!$lockedUntil) {
-            return false;
-        }
-        return strtotime((string) $lockedUntil) > time();
-    }
 }
 

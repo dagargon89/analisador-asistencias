@@ -7,6 +7,7 @@ import { AbsencesPanel } from "./modules/absences/AbsencesPanel";
 import { LeaveBalancePanel } from "./modules/absences/LeaveBalancePanel";
 import { TypedAttendanceDashboard } from "./modules/absences/TypedAttendanceDashboard";
 import { PayrollPeriodsPanel } from "./modules/payroll/PayrollPeriodsPanel";
+import { listWeekdaysBetween, toIsoDate } from "./lib/dates";
 
 // --- Types ---
 type EntryStatus = "ontime" | "late" | "verylate";
@@ -75,10 +76,6 @@ function normalizeKey(v: string): string {
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-function toIsoDate(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 function toHourMinute(d: Date): string {
@@ -267,18 +264,14 @@ function timeToMinutes(timeStr: string): number {
   return h * 60 + m;
 }
 
-function getWorkingDays(startDate: string, endDate: string): string[] {
-  const days: string[] = [];
-  const current = new Date(startDate + "T00:00:00");
-  const end = new Date(endDate + "T00:00:00");
-  while (current <= end) {
-    const dow = current.getDay();
-    if (dow >= 1 && dow <= 5) days.push(toIsoDate(current));
-    current.setDate(current.getDate() + 1);
-  }
-  return days;
-}
-
+/**
+ * Clasificación rápida de entrada para previsualización en UI.
+ *
+ * Fuente de verdad: backend/app/Services/AttendanceClassifier.php
+ * (`AttendanceClassifier::classify`). Cualquier cambio de regla debe
+ * actualizarse primero allí y luego reflejarse aquí para mantener
+ * consistencia entre lo que ve el usuario y lo que persiste el API.
+ */
 function classifyEntry(entryTime: string, config: Config): EntryStatus {
   const mins = timeToMinutes(entryTime);
   const scheduledMins = timeToMinutes(config.entryTime);
@@ -405,7 +398,7 @@ function buildAttendanceJson(
         absenceByEmp[row.employee] = (absenceByEmp[row.employee] || 0) + 1;
       }
     } else {
-      const workingDays = getWorkingDays(dates[0], dates[dates.length - 1]);
+      const workingDays = listWeekdaysBetween(dates[0], dates[dates.length - 1]);
       for (const emp of allEmployees) {
         for (const day of workingDays) {
           if (!presentSet.has(`${emp}|${day}`)) {
@@ -1100,7 +1093,7 @@ export default function AttendancePlatform() {
 
   const workingDaysInRange = useMemo(() => {
     if (!periodDateRange) return [];
-    return getWorkingDays(periodDateRange.start, periodDateRange.end);
+    return listWeekdaysBetween(periodDateRange.start, periodDateRange.end);
   }, [periodDateRange]);
 
   const absenceData = useMemo(() => {

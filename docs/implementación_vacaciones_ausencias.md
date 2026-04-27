@@ -2003,4 +2003,39 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ---
 
+---
+
+## Apéndice C — Contratos compartidos tras refactor de duplicidades
+
+Este apéndice se agrega como resultado del plan de remediación de duplicidades. Resume las **fuentes de verdad** del sistema para evitar divergencias futuras entre frontend y backend.
+
+### C.1 Calendario laboral (días hábiles e inhábiles)
+
+- Servicio único en backend: [`App\Services\WorkingCalendarService`](../backend/app/Services/WorkingCalendarService.php).
+  - `WorkingCalendarService::listWeekdays($from, $to)` — días lunes a viernes en rango ISO inclusivo.
+  - `WorkingCalendarService::workingDays($from, $to)` — hábiles menos inhábiles (`calendar_non_working_days`).
+- `AbsenceResolver` y `AbsenceExpectationService` delegan en este servicio. **No** duplicar el cálculo en otros servicios PHP.
+- Frontend espejo: [`src/lib/dates.ts::listWeekdaysBetween`](../src/lib/dates.ts) — usar este helper en lugar de bucles ad-hoc.
+
+### C.2 Clasificación de entrada (ontime/late/verylate)
+
+- Fuente de verdad: [`App\Services\AttendanceClassifier::classify`](../backend/app/Services/AttendanceClassifier.php).
+- Versión de previsualización en UI: [`src/App.tsx::classifyEntry`](../src/App.tsx) — debe mantenerse alineada al backend.
+- Política: cualquier cambio de regla (umbrales, tolerancia) se modifica primero en backend; luego se replica en el espejo del frontend dentro del mismo PR.
+
+### C.3 Lockout temporal por intentos fallidos
+
+- Helper compartido en backend: `BaseApiController::isLocked($lockedUntil)` — usado por `AuthController` (login web) y `KioskController` (kiosko).
+- Política: nuevos flujos con bloqueo temporal deben reutilizar este helper en lugar de reimplementar la verificación.
+
+### C.4 Configuración global del frontend
+
+- `API_BASE` único en [`src/config.ts`](../src/config.ts). Todos los clientes HTTP (`src/api.ts`, `src/auth/apiAuth.ts`, `src/KioskShell.tsx`) deben importarlo desde ahí.
+
+### C.5 Componente KPI compartido
+
+- Componente reutilizable en [`src/modules/shared/Kpi.tsx`](../src/modules/shared/Kpi.tsx). Usado por dashboards de ausencias, nómina y saldos de vacaciones.
+
+---
+
 **Fin del documento.** Cualquier desviación de estas especificaciones durante la implementación debe justificarse en el PR y actualizarse aquí.

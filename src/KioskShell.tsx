@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { kioskAuth } from "./api";
 import { useTheme } from "./theme/ThemeContext";
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
+import { API_BASE } from "./config";
 
 type KioskEmployee = { id: number; name: string; employeeCode: string };
 

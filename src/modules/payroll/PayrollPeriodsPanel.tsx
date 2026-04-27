@@ -41,12 +41,12 @@ export function PayrollPeriodsPanel({ canManage = true }: Props) {
   }, [refresh]);
 
   useEffect(() => {
-    if (periods.length === 0) {
-      if (selected !== null) setSelected(null);
+    if (periods.length === 0 || selected === null) {
+      if (periods.length === 0 && selected !== null) setSelected(null);
       return;
     }
     if (!periods.some((p) => p.id === selected)) {
-      setSelected(periods[0].id);
+      setSelected(null);
     }
   }, [periods, selected]);
 
@@ -56,7 +56,11 @@ export function PayrollPeriodsPanel({ canManage = true }: Props) {
     startTransition(async () => {
       try {
         const res = await generatePayrollPeriods(year);
-        setInfo(`Se insertaron ${res.inserted} periodo(s) para ${year}.`);
+        if (res.inserted === 0) {
+          setInfo(`No se insertaron periodos nuevos para ${year}: ya existen en base de datos.`);
+        } else {
+          setInfo(`Se insertaron ${res.inserted} periodo(s) para ${year}.`);
+        }
         await refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al generar");
@@ -99,6 +103,7 @@ export function PayrollPeriodsPanel({ canManage = true }: Props) {
 
   const handleView = (id: number) => {
     setError(null);
+    setInfo(null);
     setSelected(id);
   };
 
@@ -176,6 +181,7 @@ export function PayrollPeriodsPanel({ canManage = true }: Props) {
                     <button
                       type="button"
                       className={`${styles["abs-btn"]} ${styles["abs-btn--ghost"]}`}
+                      disabled={pending || loading}
                       onClick={() => handleView(p.id)}
                     >
                       Ver
@@ -183,6 +189,7 @@ export function PayrollPeriodsPanel({ canManage = true }: Props) {
                     <button
                       type="button"
                       className={`${styles["abs-btn"]} ${styles["abs-btn--primary"]}`}
+                      disabled={pending || loading}
                       onClick={() => handleDownload(p.id, p.label)}
                     >
                       XLSX
@@ -191,6 +198,7 @@ export function PayrollPeriodsPanel({ canManage = true }: Props) {
                       <button
                         type="button"
                         className={`${styles["abs-btn"]} ${styles["abs-btn--reject"]}`}
+                        disabled={pending || loading}
                         onClick={() => handleClose(p.id)}
                       >
                         Cerrar

@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use CodeIgniter\Database\BaseConnection;
-use DateInterval;
-use DatePeriod;
-use DateTimeImmutable;
 
 /**
  * Resolvedor de estado diario por empleado, con cinco estados tipificados.
@@ -17,9 +14,14 @@ class AbsenceResolver
 {
     public const DEFINITION_ID = 'weekdays_typed_absences_v1';
 
-    public function __construct(private ?BaseConnection $db = null)
-    {
+    private WorkingCalendarService $calendar;
+
+    public function __construct(
+        private ?BaseConnection $db = null,
+        ?WorkingCalendarService $calendar = null,
+    ) {
         $this->db = $db ?? db_connect();
+        $this->calendar = $calendar ?? new WorkingCalendarService($this->db);
     }
 
     /**
@@ -137,16 +139,7 @@ class AbsenceResolver
     /** @return list<string> */
     public function listWeekdays(string $from, string $to): array
     {
-        $start = new DateTimeImmutable($from);
-        $end = (new DateTimeImmutable($to))->add(new DateInterval('P1D'));
-        $out = [];
-        foreach (new DatePeriod($start, new DateInterval('P1D'), $end) as $d) {
-            $n = (int) $d->format('N');
-            if ($n >= 1 && $n <= 5) {
-                $out[] = $d->format('Y-m-d');
-            }
-        }
-        return $out;
+        return WorkingCalendarService::listWeekdays($from, $to);
     }
 
     /** @return list<array{id:int,name:string,hire_date:?string,termination_date:?string}> */
@@ -174,20 +167,7 @@ class AbsenceResolver
     /** @return array<string, true> */
     private function loadBlockedDates(string $from, string $to): array
     {
-        if (!$this->db->tableExists('calendar_non_working_days')) {
-            return [];
-        }
-        $rows = $this->db->table('calendar_non_working_days')
-            ->select('calendar_date')
-            ->where('calendar_date >=', $from)
-            ->where('calendar_date <=', $to)
-            ->get()->getResultArray();
-
-        $out = [];
-        foreach ($rows as $r) {
-            $out[(string) $r['calendar_date']] = true;
-        }
-        return $out;
+        return $this->calendar->loadBlockedDates($from, $to);
     }
 
     /** @return array<string, true> */

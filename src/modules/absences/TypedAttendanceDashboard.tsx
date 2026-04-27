@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { getTypedAbsences, type TypedAbsencesSummary, type TypedDay } from "../../api";
+import { Kpi } from "../shared/Kpi";
 import styles from "./absences.module.css";
 
 type Props = {
@@ -140,13 +141,3 @@ export function TypedAttendanceDashboard({ from, to, employee, organizationId }:
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
-  return (
-    <div className={styles["abs-kpi"]}>
-      <div className={styles["abs-kpi__label"]}>{label}</div>
-      <div className={styles["abs-kpi__value"]} style={tone ? { color: tone } : undefined}>
-        {typeof value === "number" ? value.toLocaleString("es-MX") : value}
-      </div>
-    </div>
-  );
-}
