@@ -16,7 +16,45 @@ export type ApiEmployee = {
   name: string;
   employeeCode: string | null;
   isActive: boolean;
+  position?: string | null;
+  organizationId?: number | null;
+  email?: string | null;
+  hireDate?: string | null;
+  terminationDate?: string | null;
 };
+
+export type EmployeeProfile = {
+  id: number;
+  name: string;
+  employeeCode: string | null;
+  isActive: boolean;
+  email: string | null;
+  phone: string | null;
+  position: string | null;
+  birthdate: string | null;
+  hireDate: string | null;
+  terminationDate: string | null;
+  organizationId: number | null;
+  organizationName: string | null;
+  notes: string | null;
+  hasCredential: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type EmployeeProfileUpdate = Partial<{
+  name: string;
+  employeeCode: string;
+  email: string;
+  phone: string;
+  position: string;
+  birthdate: string;
+  hireDate: string;
+  terminationDate: string;
+  organizationId: number | null;
+  isActive: boolean;
+  notes: string;
+}>;
 
 export type ScheduleSettings = {
   entryTime: string;
@@ -117,6 +155,32 @@ export async function getAbsences(params: { from: string; to: string; employee?:
 
 export async function getEmployees() {
   return request<{ employees: ApiEmployee[] }>("/api/employees");
+}
+
+export async function getEmployeeProfile(id: number): Promise<EmployeeProfile> {
+  const data = await request<{ employee: EmployeeProfile }>(`/api/employees/${id}`);
+  return data.employee;
+}
+
+export async function updateEmployeeProfile(
+  id: number,
+  payload: EmployeeProfileUpdate,
+): Promise<EmployeeProfile> {
+  const data = await request<{ employee: EmployeeProfile }>(`/api/employees/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return data.employee;
+}
+
+export async function setEmployeeCredential(
+  id: number,
+  payload: { employeeCode: string; pin: string },
+): Promise<{ ok: boolean; employeeId: number; employeeCode: string }> {
+  return request(`/api/employees/${id}/credential`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getSettings() {

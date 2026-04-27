@@ -25,6 +25,9 @@ $routes->group('api', ['filter' => 'cors'], static function ($routes): void {
         $routes->group('', ['filter' => 'role:admin,supervisor'], static function ($routes): void {
             $routes->post('auth/users', 'Api\AuthController::createUser');
             $routes->get('employees', 'Api\EmployeesController::index');
+            $routes->get('employees/(:num)', 'Api\EmployeesController::show/$1');
+            $routes->put('employees/(:num)', 'Api\EmployeesController::update/$1');
+            $routes->patch('employees/(:num)', 'Api\EmployeesController::update/$1');
             $routes->post('employees/(:num)/credential', 'Api\EmployeesController::setCredential/$1');
             $routes->get('records', 'Api\AttendanceController::records');
             $routes->get('summary', 'Api\AttendanceController::summary');

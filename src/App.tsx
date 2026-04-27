@@ -8,6 +8,8 @@ import { LeaveBalancePanel } from "./modules/absences/LeaveBalancePanel";
 import { TypedAttendanceDashboard } from "./modules/absences/TypedAttendanceDashboard";
 import { PayrollPeriodsPanel } from "./modules/payroll/PayrollPeriodsPanel";
 import { AbsencesMonthCalendar } from "./modules/shared/AbsencesMonthCalendar";
+import { EmployeesSection } from "./modules/employees/EmployeesSection";
+import { EmployeeProfileDrawer } from "./modules/employees/EmployeeProfileDrawer";
 import { listWeekdaysBetween, toIsoDate } from "./lib/dates";
 
 // --- Types ---
@@ -692,6 +694,7 @@ export default function AttendancePlatform() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [activeEmployees, setActiveEmployees] = useState<Array<{ id: number; name: string; isActive: boolean }>>([]);
+  const [profileDrawerEmployeeId, setProfileDrawerEmployeeId] = useState<number | null>(null);
   const [reportPeriod, setReportPeriod] = useState("month");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedDay, setSelectedDay] = useState("");
@@ -1440,6 +1443,13 @@ export default function AttendancePlatform() {
     return "periodo";
   }, [reportPeriod, selectedMonth, selectedDay, selectedWeek, weekOptions]);
 
+  const openProfileByName = useCallback((name: string) => {
+    const target = activeEmployees.find((e) => e.name === name);
+    if (target) {
+      setProfileDrawerEmployeeId(target.id);
+    }
+  }, [activeEmployees]);
+
   const exportDashboard = useCallback(() => {
     if (employeeReport.length === 0) return;
     const rows = employeeReport.map((emp) => ({
@@ -2076,6 +2086,7 @@ export default function AttendancePlatform() {
             { id: "incidents", icon: <Icons.Alert />, label: "Incidencias" },
             { id: "absences", icon: <Icons.UserX />, label: "Inasistencias" },
             { id: "leaveAbsences", icon: <Icons.Calendar />, label: "Vacaciones y Ausencias" },
+            { id: "employeeProfiles", icon: <Icons.Users />, label: "Perfiles de Empleados" },
           ].map(item => (
             <button
               key={item.id}
@@ -2408,7 +2419,27 @@ export default function AttendancePlatform() {
                         const pct = emp.days > 0 ? Math.round(emp.onTime / emp.days * 100) : 0;
                         return (
                           <tr key={emp.name}>
-                            <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>{emp.name}</td>
+                            <td style={{ color: "var(--color-text)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 }}>
+                              <button
+                                type="button"
+                                onClick={() => openProfileByName(emp.name)}
+                                title="Ver perfil del empleado"
+                                style={{
+                                  background: "transparent",
+                                  border: "none",
+                                  padding: 0,
+                                  color: "inherit",
+                                  cursor: "pointer",
+                                  fontFamily: "inherit",
+                                  fontWeight: 500,
+                                  textDecoration: "underline",
+                                  textUnderlineOffset: 3,
+                                  textDecorationColor: "rgba(99,132,255,0.4)",
+                                }}
+                              >
+                                {emp.name}
+                              </button>
+                            </td>
                             <td>{emp.days}</td>
                             <td><span className="badge badge-green">{emp.onTime}</span></td>
                             <td><span className="badge badge-amber">{emp.late}</span></td>
@@ -2570,7 +2601,27 @@ export default function AttendancePlatform() {
                   <div key={emp.name} className="glass-panel" style={{ padding: 20 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                       <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)" }}>{emp.name}</div>
+                        <button
+                          type="button"
+                          onClick={() => openProfileByName(emp.name)}
+                          title="Ver perfil del empleado"
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: "var(--color-text)",
+                            cursor: "pointer",
+                            textAlign: "left",
+                            fontFamily: "inherit",
+                            textDecoration: "underline",
+                            textUnderlineOffset: 3,
+                            textDecorationColor: "rgba(99,132,255,0.4)",
+                          }}
+                        >
+                          {emp.name}
+                        </button>
                         <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 2 }}>{emp.days} días registrados</div>
                       </div>
                       <div
@@ -2961,6 +3012,21 @@ export default function AttendancePlatform() {
               activeEmployees={activeEmployees}
               selectedEmployee={selectedEmployee}
             />
+          )}
+
+          {/* EMPLOYEE PROFILES */}
+          {activeTab === "employeeProfiles" && (
+            <div className="glass-panel" style={{ padding: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text)" }}>Perfiles de Empleados</div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
+                    Datos de RH y campos requeridos para cálculos: hire_date, termination_date, organización, contacto y PIN de Kiosko.
+                  </div>
+                </div>
+              </div>
+              <EmployeesSection />
+            </div>
           )}
 
           {/* DATABASE VIEW */}
@@ -3500,6 +3566,12 @@ sin importar mayúsculas o tildes.`}</pre>
           </div>
         </div>
       )}
+
+      <EmployeeProfileDrawer
+        employeeId={profileDrawerEmployeeId}
+        open={profileDrawerEmployeeId !== null}
+        onClose={() => setProfileDrawerEmployeeId(null)}
+      />
     </div>
   );
 }
