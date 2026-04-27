@@ -18,8 +18,8 @@ class JwtService
             throw new RuntimeException('Configura auth.jwtSecret en backend/.env');
         }
         $this->issuer = (string) env('auth.jwtIssuer', 'attendance-app');
-        $this->ttlAccess = (int) env('auth.accessTtlSeconds', 900);
-        $this->ttlKiosk = (int) env('auth.kioskTtlSeconds', 600);
+        $this->ttlAccess = (int) env('auth.accessTtlSeconds', 31536000);
+        $this->ttlKiosk = (int) env('auth.kioskTtlSeconds', 31536000);
     }
 
     public function issueAccessToken(array $claims): string
